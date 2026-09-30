@@ -898,6 +898,11 @@ dialog h2 {
   font-size: 13px;
 }
 
+/* the banner sets display, so [hidden] needs to win explicitly */
+.banner[hidden] {
+  display: none;
+}
+
 .banner.err {
   border-color: var(--error);
   color: var(--error);
