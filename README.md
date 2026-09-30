@@ -23,7 +23,7 @@ JS ──acorn──▶ AST ──frontend──▶ Brainfuck ──serialize(�
 
 ### 命令セット
 
-プリセットは 羊語 / Brainfuck / Ook! / 猫語 / 絵文字 / [Whitefuck](https://github.com/sevenc-nanashi/whitefuck) です。自分で作ることもできます。
+プリセットは 羊語 / Brainfuck / Ook! / 猫語 / 絵文字 / BrainPower（掛け声風: `A-` `E-` `I-` `U-` `O-oooo` `E-eee` `JO-oooo` `AAAAE-`） / [Whitefuck](https://github.com/sevenc-nanashi/whitefuck) です。自分で作ることもできます。
 
 Whitefuck は空白とタブだけで書く言語で、**1 行 1 命令**です（行全体が命令と一致したときだけ命令になり、それ以外の行はコメント扱い）。
 これに合わせて、命令セットには「行単位モード」があります。JS 実装のコンパイラも生成される Wasm コンパイラも、このモードに対応しています。

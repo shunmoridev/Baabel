@@ -95,6 +95,7 @@ export const ja = {
   'dialect.ook': 'Ook!',
   'dialect.cat': '猫語',
   'dialect.emoji': '絵文字',
+  'dialect.brainpower': 'BrainPower',
   'dialect.whitefuck': 'Whitefuck',
   'dialect.custom': 'カスタム',
   'dialect.empty': '「{op}」の命令が空です',

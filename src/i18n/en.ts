@@ -96,6 +96,7 @@ export const en: Messages = {
   'dialect.ook': 'Ook!',
   'dialect.cat': 'Cat',
   'dialect.emoji': 'Emoji',
+  'dialect.brainpower': 'BrainPower',
   'dialect.whitefuck': 'Whitefuck',
   'dialect.custom': 'Custom',
   'dialect.empty': 'The instruction "{op}" is empty',

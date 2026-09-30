@@ -48,6 +48,11 @@ export const PRESETS: Dialect[] = [
     tokens: { '>': '👉', '<': '👈', '+': '👍', '-': '👎', '.': '📣', ',': '👂', '[': '🔁', ']': '🔚' },
   },
   {
+    // vowel chants in the style of "Brain Power": runs of + read like A-A-A-A-
+    id: 'brainpower',
+    tokens: { '>': 'I-', '<': 'U-', '+': 'A-', '-': 'E-', '.': 'O-oooo', ',': 'E-eee', '[': 'JO-oooo', ']': 'AAAAE-' },
+  },
+  {
     // https://github.com/sevenc-nanashi/whitefuck — spaces and tabs, one command per line
     id: 'whitefuck',
     tokens: { '>': '\t ', '<': '\t\t', '+': '  ', '-': ' \t', '.': '   ', ',': '  \t', '[': ' \t ', ']': ' \t\t' },

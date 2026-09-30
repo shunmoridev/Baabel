@@ -96,6 +96,7 @@ export const zh: Messages = {
   'dialect.ook': 'Ook!',
   'dialect.cat': '猫语',
   'dialect.emoji': '表情符号',
+  'dialect.brainpower': 'BrainPower',
   'dialect.whitefuck': 'Whitefuck',
   'dialect.custom': '自定义',
   'dialect.empty': '指令“{op}”为空',
