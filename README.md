@@ -102,4 +102,6 @@ UI・コンパイルエラー・サンプル・言語仕様は **日本語 / Eng
 - [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono)：SIL Open Font License 1.1
 - [M PLUS Rounded 1c](https://github.com/coz-m/MPLUS_FONTS)：SIL Open Font License 1.1
 
-ライセンス文は `public/licenses/` にあり、ビルド後は `dist/licenses/` に入ります。
+ビルドすると `dist/licenses/THIRD_PARTY_LICENSES.txt` が自動で作られます（`scripts/third-party-licenses.ts`）。
+実際にバンドルされたパッケージ（JS・CSS・フォント）だけを集めて、それぞれのライセンス全文を載せます。
+ライセンスファイルのないパッケージが紛れ込んだ場合は、ビルドが失敗します。
