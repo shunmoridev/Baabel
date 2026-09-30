@@ -41,6 +41,8 @@ export const zh: Messages = {
 
   'dialog.title': '编辑指令集',
   'dialog.hint': '为 8 条指令分别决定写法。词法分析器和编译器会根据这些字符串生成，中间的文本会真正按照这门语言来解析。不匹配任何指令的字符都视为注释。',
+  'dialog.lines': '每行一条指令（整行匹配，Whitefuck 方式）',
+  'dialog.whitespace': '空格用 · 表示，制表符用 ⇥ 表示',
   'dialog.presets': '预设：',
   'dialog.cancel': '取消',
   'dialog.apply': '应用',
@@ -94,6 +96,7 @@ export const zh: Messages = {
   'dialect.ook': 'Ook!',
   'dialect.cat': '猫语',
   'dialect.emoji': '表情符号',
+  'dialect.whitefuck': 'Whitefuck',
   'dialect.custom': '自定义',
   'dialect.empty': '指令“{op}”为空',
   'dialect.space': '指令“{op}”的前后不能有空白',

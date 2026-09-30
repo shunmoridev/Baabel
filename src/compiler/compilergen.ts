@@ -69,7 +69,51 @@ function buildTrie(d: Dialect): Trie {
 }
 
 /** match(i, end): (length << 4) | opcode of the longest token at i, or 0. */
+/**
+ * Line mode: match(i, end) looks at the whole line starting at i. If it equals
+ * a token, it returns (advance << 4) | opcode, otherwise (advance << 4) so the
+ * line is skipped as a comment. A trailing CR is ignored.
+ */
+function genMatchLines(d: Dialect): number[] {
+  const a = new Asm();
+  const I = 0,
+    END = 1,
+    BEST = 2,
+    E = 3,
+    LEN = 4,
+    ADV = 5;
+  // e = end of line
+  a.get(I).set(E);
+  a.block(() =>
+    a.loop(() => {
+      a.get(E).get(END).ge_u().br_if(1);
+      a.get(E).load8().i32(10).eq().br_if(1);
+      a.get(E).i32(1).add().set(E);
+      a.br(0);
+    }),
+  );
+  // advance = line length + the newline (if any)
+  a.get(E).get(I).sub().get(E).get(END).lt_u().add().set(ADV);
+  a.get(E).get(I).sub().set(LEN);
+  a.get(LEN);
+  a.if(() => {
+    a.get(E).i32(1).sub().load8().i32(13).eq();
+    a.if(() => void a.get(LEN).i32(1).sub().set(LEN));
+  });
+  a.get(ADV).i32(4).shl().set(BEST);
+  const enc = new TextEncoder();
+  for (const op of BF_OPS) {
+    const bytes = enc.encode(d.tokens[op]);
+    a.get(LEN).i32(bytes.length).eq();
+    bytes.forEach((b, j) => a.get(I).load8(j).i32(b).eq().and());
+    a.if(() => void a.get(ADV).i32(4).shl().i32(OP_CODE[op]).or().set(BEST));
+  }
+  a.get(BEST);
+  return a.body(4);
+}
+
 function genMatch(d: Dialect): number[] {
+  if (d.lines) return genMatchLines(d);
   const a = new Asm();
   const I = 0,
     END = 1,
@@ -170,18 +214,17 @@ function genCompile(): number[] {
   a.block(() =>
     a.loop(() => {
       a.get(I).get(END).ge_u().br_if(1);
-      a.get(I).get(END).call(F_MATCH).tee(M);
-      a.if(
-        () => {
-          a.get(OPS).get(N).add().get(M).i32(15).and().store8();
-          a.get(OFFS).get(N).i32(2).shl().add().get(I).i32(SRC).sub().store32();
-          a.get(N).i32(1).add().set(N);
-          a.get(I).get(M).i32(4).shr_u().add().set(I);
-        },
-        () => {
-          a.get(I).i32(1).add().set(I); // not a token: comment byte
-        },
-      );
+      // m = (advance << 4) | opcode; opcode 0 means "comment"
+      a.get(I).get(END).call(F_MATCH).set(M);
+      a.get(M).i32(15).and();
+      a.if(() => {
+        a.get(OPS).get(N).add().get(M).i32(15).and().store8();
+        a.get(OFFS).get(N).i32(2).shl().add().get(I).i32(SRC).sub().store32();
+        a.get(N).i32(1).add().set(N);
+      });
+      // i += max(advance, 1)
+      a.get(M).i32(4).shr_u().set(TT);
+      a.get(I).i32(1).get(TT).get(TT).eqz().select().add().set(I);
       a.br(0);
     }),
   );

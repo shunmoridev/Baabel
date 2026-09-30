@@ -41,6 +41,8 @@ export const en: Messages = {
 
   'dialog.title': 'Edit instruction set',
   'dialog.hint': 'Choose how each of the 8 instructions is written. A lexer and a compiler are built from these strings, and the middle text is really parsed as that language. Characters that match no instruction are comments.',
+  'dialog.lines': 'One instruction per line (whole lines are matched, as in Whitefuck)',
+  'dialog.whitespace': 'Type and read spaces as · and tabs as ⇥',
   'dialog.presets': 'Presets:',
   'dialog.cancel': 'Cancel',
   'dialog.apply': 'Apply',
@@ -94,6 +96,7 @@ export const en: Messages = {
   'dialect.ook': 'Ook!',
   'dialect.cat': 'Cat',
   'dialect.emoji': 'Emoji',
+  'dialect.whitefuck': 'Whitefuck',
   'dialect.custom': 'Custom',
   'dialect.empty': 'The instruction "{op}" is empty',
   'dialect.space': 'The instruction "{op}" cannot start or end with whitespace',

@@ -852,3 +852,34 @@ dialog h2 {
   padding: 0 4px;
   color: var(--text);
 }
+
+/* ───────── line mode (Whitefuck) ───────── */
+
+.lines-toggle {
+  margin: 0 0 10px;
+}
+
+.ws-hint {
+  margin: 8px 0 0;
+}
+
+.ws-mode .cm-highlightSpace,
+.ws-mode .cm-highlightTab {
+  opacity: 0.9;
+}
+
+.ws-mode .tk-move {
+  background: color-mix(in srgb, var(--tk-move) 22%, transparent);
+}
+.ws-mode .tk-add {
+  background: color-mix(in srgb, var(--tk-add) 22%, transparent);
+}
+.ws-mode .tk-sub {
+  background: color-mix(in srgb, var(--tk-sub) 22%, transparent);
+}
+.ws-mode .tk-io {
+  background: color-mix(in srgb, var(--tk-io) 22%, transparent);
+}
+.ws-mode .tk-loop {
+  background: color-mix(in srgb, var(--tk-loop) 22%, transparent);
+}

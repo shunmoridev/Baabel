@@ -18,6 +18,12 @@ export interface Dialect {
   /** Preset id ('sheep', 'bf', …) or 'custom'. */
   id: string;
   tokens: Record<BfOp, string>;
+  /**
+   * Line mode: one instruction per line, and a line must match a token
+   * exactly (as in Whitefuck, whose tokens are made of spaces and tabs).
+   * Lines that match nothing are comments.
+   */
+  lines?: boolean;
 }
 
 export const PRESETS: Dialect[] = [
@@ -41,6 +47,12 @@ export const PRESETS: Dialect[] = [
     id: 'emoji',
     tokens: { '>': '👉', '<': '👈', '+': '👍', '-': '👎', '.': '📣', ',': '👂', '[': '🔁', ']': '🔚' },
   },
+  {
+    // https://github.com/sevenc-nanashi/whitefuck — spaces and tabs, one command per line
+    id: 'whitefuck',
+    tokens: { '>': '\t ', '<': '\t\t', '+': '  ', '-': ' \t', '.': '   ', ',': '  \t', '[': ' \t ', ']': ' \t\t' },
+    lines: true,
+  },
 ];
 
 export function dialectName(d: Dialect): string {
@@ -51,8 +63,18 @@ export function dialectName(d: Dialect): string {
 export function normalizeDialect(d: Partial<Dialect> | null | undefined): Dialect | null {
   if (!d?.tokens) return null;
   const tokens = d.tokens;
-  const preset = PRESETS.find((p) => BF_OPS.every((op) => p.tokens[op] === tokens[op]));
-  return preset ?? { id: 'custom', tokens };
+  const lines = !!d.lines;
+  const preset = PRESETS.find((p) => !!p.lines === lines && BF_OPS.every((op) => p.tokens[op] === tokens[op]));
+  return preset ?? { id: 'custom', tokens, ...(lines ? { lines } : {}) };
+}
+
+/** Make whitespace visible (used wherever tokens are displayed or edited). */
+export function showWhitespace(s: string): string {
+  return s.replace(/ /g, '·').replace(/\t/g, '⇥');
+}
+
+export function parseWhitespace(s: string): string {
+  return s.replace(/·/g, ' ').replace(/⇥/g, '\t');
 }
 
 // ───────────────────────── validation ─────────────────────────
@@ -69,12 +91,12 @@ export function checkDialect(d: Dialect): DialectCheck {
   for (const op of BF_OPS) {
     const tok = d.tokens[op];
     if (!tok) errors.push(t('dialect.empty', { op }));
-    else if (tok !== tok.trim()) errors.push(t('dialect.space', { op }));
+    else if (!d.lines && tok !== tok.trim()) errors.push(t('dialect.space', { op }));
     else if (/[\r\n]/.test(tok)) errors.push(t('dialect.newline', { op }));
     else if (seen.has(tok)) errors.push(t('dialect.duplicate', { a: seen.get(tok)!, b: op }));
     else seen.set(tok, op);
   }
-  if (errors.length) return { errors, needsSeparator: false };
+  if (errors.length || d.lines) return { errors, needsSeparator: false };
   const lexer = new Lexer(d);
   // Multi-word tokens (e.g. "Ook. Ook?") read better with spaces between them.
   const spaced = BF_OPS.some((op) => /\s/.test(d.tokens[op]));
@@ -111,8 +133,10 @@ export interface LexResult {
 
 export class Lexer {
   private root: TrieNode = { next: new Map() };
+  private lineTable: Map<string, BfOp> | null = null;
 
   constructor(d: Dialect) {
+    if (d.lines) this.lineTable = new Map(BF_OPS.map((op) => [d.tokens[op], op]));
     for (const op of BF_OPS) {
       let node = this.root;
       for (const ch of d.tokens[op]) {
@@ -125,6 +149,7 @@ export class Lexer {
   }
 
   lex(src: string): LexResult {
+    if (this.lineTable) return this.lexLines(src);
     const ops: string[] = [];
     const pos: number[] = [];
     let commentChars = 0;
@@ -157,6 +182,26 @@ export class Lexer {
     }
     return { ops: ops.join(''), pos, commentChars };
   }
+
+  /** Line mode: each whole line (a trailing CR is ignored) is one token, or a comment. */
+  private lexLines(src: string): LexResult {
+    const ops: string[] = [];
+    const pos: number[] = [];
+    let commentChars = 0;
+    let start = 0;
+    while (start <= src.length) {
+      let end = src.indexOf('\n', start);
+      if (end < 0) end = src.length;
+      const line = src.slice(start, end).replace(/\r$/, '');
+      const op = this.lineTable!.get(line);
+      if (op) {
+        ops.push(op);
+        pos.push(start);
+      } else commentChars += line.replace(/\s/g, '').length;
+      start = end + 1;
+    }
+    return { ops: ops.join(''), pos, commentChars };
+  }
 }
 
 // ───────────────────────── serializer ─────────────────────────
@@ -166,6 +211,8 @@ export class Lexer {
  * longer loops are broken into indented lines so the structure is visible.
  */
 export function serialize(bf: string, d: Dialect, needsSeparator: boolean): string {
+  // Line mode: exactly one token per line, no indentation (it would change the meaning).
+  if (d.lines) return Array.from(bf, (op) => d.tokens[op as BfOp] + '\n').join('');
   const sep = needsSeparator ? ' ' : '';
   const tok = (op: string) => d.tokens[op as BfOp];
   const MAX_LINE = 48; // tokens per line

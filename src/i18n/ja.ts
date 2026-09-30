@@ -40,6 +40,8 @@ export const ja = {
 
   'dialog.title': '命令セットを編集',
   'dialog.hint': '8 つの命令それぞれの書き方を決めます。ここで決めた文字列から字句解析器とコンパイラが作られ、中央のテキストが本当にその言語として解釈されます。どの命令にも当てはまらない文字はコメント扱いです。',
+  'dialog.lines': '1 行に 1 命令（行全体で照合する。Whitefuck 方式）',
+  'dialog.whitespace': '空白は ·、タブは ⇥ で入力・表示します',
   'dialog.presets': 'プリセット:',
   'dialog.cancel': 'キャンセル',
   'dialog.apply': '適用',
@@ -93,6 +95,7 @@ export const ja = {
   'dialect.ook': 'Ook!',
   'dialect.cat': '猫語',
   'dialect.emoji': '絵文字',
+  'dialect.whitefuck': 'Whitefuck',
   'dialect.custom': 'カスタム',
   'dialect.empty': '「{op}」の命令が空です',
   'dialect.space': '「{op}」の命令の前後に空白は使えません',

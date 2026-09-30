@@ -1,6 +1,6 @@
 import { EditorView, basicSetup } from 'codemirror';
-import { Annotation, EditorState, StateEffect, StateField, type Extension, RangeSetBuilder } from '@codemirror/state';
-import { Decoration, type DecorationSet, ViewPlugin, type ViewUpdate } from '@codemirror/view';
+import { Annotation, Compartment, EditorState, StateEffect, StateField, type Extension, RangeSetBuilder } from '@codemirror/state';
+import { Decoration, type DecorationSet, ViewPlugin, type ViewUpdate, highlightWhitespace } from '@codemirror/view';
 import { javascript } from '@codemirror/lang-javascript';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
@@ -155,6 +155,7 @@ export function createMeemeEditor(parent: HTMLElement, onUserChange: (text: stri
         dialectField,
         errorLineField,
         tokenHighlighter(),
+        whitespaceMode.of([]),
         EditorView.updateListener.of((u) => {
           if (!u.docChanged) return;
           const programmatic = u.transactions.some((tr) => tr.annotation(programmaticAnnotation.type));
@@ -180,6 +181,10 @@ export function setDocProgrammatically(view: EditorView, text: string) {
   });
 }
 
+// Line-mode dialects (Whitefuck) are made of spaces and tabs: make them visible.
+const whitespaceMode = new Compartment();
+const whitespaceExt = [highlightWhitespace(), EditorView.editorAttributes.of({ class: 'ws-mode' })];
+
 export function setEditorDialect(view: EditorView, d: Dialect) {
-  view.dispatch({ effects: setDialectEffect.of(d) });
+  view.dispatch({ effects: [setDialectEffect.of(d), whitespaceMode.reconfigure(d.lines ? whitespaceExt : [])] });
 }

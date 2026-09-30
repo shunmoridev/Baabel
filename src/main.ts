@@ -1,7 +1,7 @@
 import './style.css';
 import type { EditorView } from 'codemirror';
 import { getExamples, identifyExample } from './examples';
-import { BF_OPS, PRESETS, checkDialect, dialectName, normalizeDialect, opLabel, translate, type BfOp, type Dialect } from './compiler/dialect';
+import { BF_OPS, PRESETS, checkDialect, dialectName, normalizeDialect, opLabel, parseWhitespace, showWhitespace, translate, type BfOp, type Dialect } from './compiler/dialect';
 import { jsToMeeme, meemeToWasm, MeemeError, type FrontResult } from './compiler/pipeline';
 import { buildCompiler, GeneratedCompileError, type GeneratedCompiler } from './compiler/compilergen';
 import { CompileError } from './compiler/frontend';
@@ -287,7 +287,7 @@ function renderCompilerTab() {
   const enc = new TextEncoder();
   for (const op of BF_OPS) {
     const tr = el('tr');
-    tr.append(el('td', '', c.dialect.tokens[op]), el('td', '', op), el('td', '', Array.from(enc.encode(c.dialect.tokens[op])).join(' ')));
+    tr.append(el('td', '', showWhitespace(c.dialect.tokens[op])), el('td', '', op), el('td', '', Array.from(enc.encode(c.dialect.tokens[op])).join(' ')));
     table.append(tr);
   }
   const pre = el('pre', 'wat-inline');
@@ -353,7 +353,7 @@ function renderLegend() {
   for (const op of BF_OPS) {
     const chip = el('span', 'chip');
     chip.title = opLabel(op);
-    chip.append(el('span', cls[op], dialect.tokens[op]), el('code', '', op));
+    chip.append(el('span', cls[op], showWhitespace(dialect.tokens[op])), el('code', '', op));
     box.append(chip);
   }
   $('meeme-title').textContent = dialectName(dialect);
@@ -436,11 +436,14 @@ function openDialectEditor() {
   const grid = $('token-grid');
   const presets = $('preset-row');
   const inputs = {} as Record<BfOp, HTMLInputElement>;
+  const linesBox = $<HTMLInputElement>('dialect-lines');
+  linesBox.checked = !!dialect.lines;
+  linesBox.onchange = validate;
   grid.replaceChildren();
   for (const op of BF_OPS) {
     const label = el('label');
     const input = document.createElement('input');
-    input.value = dialect.tokens[op];
+    input.value = showWhitespace(dialect.tokens[op]);
     input.spellcheck = false;
     input.addEventListener('input', validate);
     inputs[op] = input;
@@ -452,21 +455,22 @@ function openDialectEditor() {
     const b = el('button', 'btn tiny', dialectName(p)) as HTMLButtonElement;
     b.type = 'button';
     b.onclick = () => {
-      for (const op of BF_OPS) inputs[op].value = p.tokens[op];
+      for (const op of BF_OPS) inputs[op].value = showWhitespace(p.tokens[op]);
+      linesBox.checked = !!p.lines;
       validate();
     };
     presets.append(b);
   }
   const current = (): Dialect => {
     const tokens = {} as Record<BfOp, string>;
-    for (const op of BF_OPS) tokens[op] = inputs[op].value;
-    return normalizeDialect({ tokens })!;
+    for (const op of BF_OPS) tokens[op] = parseWhitespace(inputs[op].value);
+    return normalizeDialect({ tokens, lines: linesBox.checked })!;
   };
   function validate() {
     const errs = $('dialect-errors');
     errs.replaceChildren();
     const check = checkDialect(current());
-    for (const op of BF_OPS) inputs[op].classList.toggle('bad', !inputs[op].value.trim());
+    for (const op of BF_OPS) inputs[op].classList.toggle('bad', !inputs[op].value);
     for (const e of check.errors) errs.append(el('div', 'error', `✗ ${e}`));
     if (!check.errors.length && check.needsSeparator) errs.append(el('div', 'warn', t('dialog.needsSeparator')));
     $<HTMLButtonElement>('dialect-apply').disabled = check.errors.length > 0;
