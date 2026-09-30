@@ -21,7 +21,7 @@ JS ──acorn──▶ AST ──frontend──▶ Brainfuck ──serialize(�
 
 ### 命令セット
 
-プリセットは 羊語 / Brainfuck / Ook! / 猫語 / 絵文字 / BrainPower（掛け声風: `A-` `E-` `I-` `U-` `O-oooo` `E-eee` `JO-oooo` `AAAAE-`） / [Whitefuck](https://github.com/sevenc-nanashi/whitefuck) です。自分で作ることもできます。
+プリセットは 羊語 / Brainfuck / Ook! / 猫語 / 絵文字 / [Whitefuck](https://github.com/sevenc-nanashi/whitefuck) です。自分で作ることもできます。
 
 Whitefuck は空白とタブだけで書く言語で、**1 行 1 命令**です（行全体が命令と一致したときだけ命令になり、それ以外の行はコメント扱い）。
 これに合わせて、命令セットには「行単位モード」があります。JS 実装のコンパイラも生成される Wasm コンパイラも、このモードに対応しています。
@@ -70,15 +70,15 @@ UI・コンパイルエラー・サンプル・言語仕様は **日本語 / Eng
 
 | 対応 | 内容 |
 |---|---|
-| ✅値 | 8bit 符号なし整数（0〜255、はみ出すと一周）、`true`/`false` |
-| ✅変数 | `let` / `const` / `var`（ブロックスコープ）、`const` の定数は畳み込み |
-| ✅演算 | `+ - * / %`、比較、`&& \|\| !`、三項演算子、`+= -= *= /= %=`、`++ --`、定数シフト、`& (2^n-1)` |
-| ✅制御 | `if/else`、`while`、`do-while`、`for`、`for...of`、`break`、`continue`、`return` |
-| ✅関数 | `function` / アロー関数。呼び出し箇所にインライン展開（**再帰は不可**） |
-| ✅配列 | `[1,2,3]`、`new Array(n).fill(v)`、`"文字列"`（UTF-8 のバイト配列）、実行時の添字でアクセス可 |
-| ✅入出力 | `console.log(...)`、`print(...)`（改行なし）、`putchar(c)`、`getchar()`、`readInt()`、テンプレート文字列 |
-| ✅その他 | `Math.min/max/floor/abs`、`String.fromCharCode`、`s.charCodeAt(i)` |
-| ❌ | 再帰、関数を値として扱うこと、オブジェクト・クラス、`switch`、`try`、`async`・ジェネレータ、浮動小数点・負の数、256 以上の数、配列のメソッド |
+| ✅値| 8bit 符号なし整数（0〜255、はみ出すと一周）、`true`/`false` |
+| ✅変数| `let` / `const` / `var`（ブロックスコープ）、`const` の定数は畳み込み |
+| ✅演算| `+ - * / %`、比較、`&& \|\| !`、三項演算子、`+= -= *= /= %=`、`++ --`、定数シフト、`& (2^n-1)` |
+| ✅制御| `if/else`、`while`、`do-while`、`for`、`for...of`、`break`、`continue`、`return` |
+| ✅関数| `function` / アロー関数。呼び出し箇所にインライン展開（**再帰は不可**） |
+| ✅配列| `[1,2,3]`、`new Array(n).fill(v)`、`"文字列"`（UTF-8 のバイト配列）、実行時の添字でアクセス可 |
+| ✅入出力| `console.log(...)`、`print(...)`（改行なし）、`putchar(c)`、`getchar()`、`readInt()`、テンプレート文字列 |
+| ✅その他| `Math.min/max/floor/abs`、`String.fromCharCode`、`s.charCodeAt(i)` |
+| ❌| 再帰、関数を値として扱うこと、オブジェクト・クラス、`switch`、`try`、`async`・ジェネレータ、浮動小数点・負の数、256 以上の数、配列のメソッド |
 
 `x / 0` と `x % 0` は 0 になります。入力が尽きたら `getchar()` は 0 を返します。
 
