@@ -1,3 +1,4 @@
+# GitHub Pages is configured to deploy the Vite build through Actions.
 name: Deploy Baabel to GitHub Pages
 
 on:
