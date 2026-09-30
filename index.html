@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Baabel</title>
+    <meta name="description" content="JavaScript → 羊語 → WebAssembly。羊語はただの表示ではなく、実際にコンパイルされて動く言語です。" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐑</text></svg>" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=M+PLUS+Rounded+1c:wght@500;800&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">🐑</span>
+        <div>
+          <h1>Baabel</h1>
+          <p class="tagline">JavaScript → <b id="tagline-dialect">羊語</b> → WebAssembly</p>
+        </div>
+      </div>
+      <div class="controls">
+        <label class="field">
+          <span>サンプル</span>
+          <select id="example-select"></select>
+        </label>
+        <label class="field">
+          <span>命令セット</span>
+          <select id="dialect-select"></select>
+        </label>
+        <button id="dialect-edit" class="btn ghost" type="button">✎ 編集</button>
+        <label class="toggle"><input id="autorun" type="checkbox" checked /> 自動実行</label>
+        <button id="run" class="btn primary" type="button">▶ 実行</button>
+      </div>
+    </header>
+
+    <main class="panes">
+      <section class="pane" id="pane-js">
+        <header class="pane-head">
+          <div class="pane-title"><span class="step">1</span> JavaScript <small>高級言語</small></div>
+          <div id="js-status" class="status"></div>
+        </header>
+        <div class="editor" id="js-editor"></div>
+        <div id="js-messages" class="messages"></div>
+      </section>
+
+      <div class="arrow" aria-hidden="true"><span>コンパイル</span></div>
+
+      <section class="pane" id="pane-meeme">
+        <header class="pane-head">
+          <div class="pane-title"><span class="step">2</span> <span id="meeme-title">羊語</span> <small>実行されるソース</small></div>
+          <div class="pane-actions">
+            <span id="meeme-badge" class="badge">JSから生成</span>
+            <button id="regen" class="btn tiny" type="button" hidden>JSから再生成</button>
+          </div>
+        </header>
+        <div class="editor" id="meeme-editor"></div>
+        <div id="legend" class="legend"></div>
+        <div id="meeme-messages" class="messages"></div>
+      </section>
+
+      <div class="arrow" aria-hidden="true"><span>コンパイル</span></div>
+
+      <section class="pane" id="pane-out">
+        <header class="pane-head">
+          <div class="pane-title"><span class="step">3</span> 実行 <small>WebAssembly</small></div>
+          <div id="run-status" class="status"></div>
+        </header>
+        <nav class="tabs" role="tablist">
+          <button class="tab active" data-tab="output" type="button">出力</button>
+          <button class="tab" data-tab="wat" type="button">Wasm (WAT)</button>
+          <button class="tab" data-tab="hex" type="button">バイナリ</button>
+          <button class="tab" data-tab="tape" type="button">テープ</button>
+        </nav>
+        <div class="tab-body">
+          <pre id="output" class="view active" data-view="output"></pre>
+          <pre id="wat" class="view" data-view="wat"></pre>
+          <pre id="hex" class="view" data-view="hex"></pre>
+          <div id="tape" class="view" data-view="tape"></div>
+        </div>
+        <label class="stdin">
+          <span>標準入力</span>
+          <textarea id="stdin" rows="2" spellcheck="false" placeholder="getchar() / readInt() で読まれます"></textarea>
+        </label>
+      </section>
+    </main>
+
+    <footer class="stats" id="stats"></footer>
+
+    <dialog id="dialect-dialog">
+      <form method="dialog" id="dialect-form">
+        <h2>命令セットを編集</h2>
+        <p class="hint">8 つの命令それぞれの書き方を決めます。ここで決めた文字列から字句解析器が作られ、中央のテキストが本当にその言語として解釈されます。どの命令にも当てはまらない文字はコメント扱いです。</p>
+        <div class="preset-row" id="preset-row"></div>
+        <div class="token-grid" id="token-grid"></div>
+        <div id="dialect-errors" class="messages"></div>
+        <div class="dialog-actions">
+          <button value="cancel" class="btn ghost" type="submit" formnovalidate>キャンセル</button>
+          <button value="apply" id="dialect-apply" class="btn primary" type="submit">適用</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
