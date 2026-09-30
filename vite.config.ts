@@ -1,5 +1,5 @@
 import { defineConfig } from 'vite';
-import { thirdPartyLicenses } from './scripts/third-party-licenses';
+import { thirdPartyLicenses } from './scripts/third-party-licenses.ts';
 
 export default defineConfig({
   base: './',
