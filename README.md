@@ -1,6 +1,6 @@
 # 🐑 Baabel
 
-**JavaScript → 羊語 → WebAssembly**
+<img width="1792" height="610" alt="image" src="https://github.com/user-attachments/assets/e595fc3a-893b-44e1-9b4c-f8cd785b9c92" />
 
 Babel（JS のトランスパイラ）＋ バベルの塔（言語がたくさん）＋ Baa（羊の鳴き声）。
 
@@ -58,7 +58,6 @@ npm test
 
 - データは URL の `#` より後ろに入っているので、サーバーには送信も保存もされません。静的ホスティングのままで動きます
 - 長さはコードに比例します（サンプルの「羊を数える」で約 250 文字）。4000 文字を超えると警告します
-- 固定長の短いリンク（`/s/aB3xK9` のような形）にするには、コードを保存するサーバーが必要です（例：Cloudflare Workers + KV）。任意の長さのコードを、固定長の文字列だけから復元することはできないためです
 
 ## 多言語対応
 
