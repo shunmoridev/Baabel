@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { EXAMPLES } from '../src/examples';
+import { getExamples } from '../src/examples';
+import { setLocale, type Locale } from '../src/i18n';
 import { jsToMeeme, meemeToWasm } from '../src/compiler/pipeline';
 import { PRESETS, checkDialect, translate } from '../src/compiler/dialect';
 import { execWasm } from '../src/runtime/exec';
@@ -53,11 +54,13 @@ async function runBaabel(code: string, input = '', dialect = PRESETS[0]) {
 }
 
 describe('examples match real JavaScript', () => {
-  for (const ex of EXAMPLES) {
-    it(ex.title, async () => {
-      const { out } = await runBaabel(ex.code, ex.input);
-      expect(out).toBe(runAsJs(ex.code, ex.input));
-    });
+  for (const locale of ['ja', 'en', 'zh'] as Locale[]) {
+    for (const ex of getExamples(locale)) {
+      it(`[${locale}] ${ex.title}`, async () => {
+        const { out } = await runBaabel(ex.code, ex.input);
+        expect(out).toBe(runAsJs(ex.code, ex.input));
+      });
+    }
   }
 });
 
@@ -100,7 +103,7 @@ describe('language features', () => {
 
 describe('dialects', () => {
   it('every preset is valid and round-trips', async () => {
-    const code = EXAMPLES.find((e) => e.id === 'fizzbuzz')!.code;
+    const code = getExamples('ja').find((e) => e.id === 'fizzbuzz')!.code;
     for (const d of PRESETS) {
       expect(checkDialect(d).errors).toEqual([]);
       const { out } = await runBaabel(code, '', d);
@@ -109,11 +112,11 @@ describe('dialects', () => {
   });
 
   it('detects ambiguous dialects', () => {
-    const d = { name: 'bad', tokens: { '>': 'a', '<': 'b', '+': 'ab', '-': 'c', '.': 'd', ',': 'e', '[': 'f', ']': 'g' } };
+    const d = { id: 'custom', tokens: { '>': 'a', '<': 'b', '+': 'ab', '-': 'c', '.': 'd', ',': 'e', '[': 'f', ']': 'g' } };
     const check = checkDialect(d);
     expect(check.errors).toEqual([]);
     expect(check.needsSeparator).toBe(true);
-    const clash = { name: 'x', tokens: { '>': 'a', '<': 'a', '+': 'b', '-': 'c', '.': 'd', ',': 'e', '[': 'f', ']': 'g' } };
+    const clash = { id: 'custom', tokens: { '>': 'a', '<': 'a', '+': 'b', '-': 'c', '.': 'd', ',': 'e', '[': 'f', ']': 'g' } };
     expect(checkDialect(clash).errors.length).toBeGreaterThan(0);
   });
 
@@ -147,4 +150,69 @@ describe('wasm', () => {
     const back = meemeToWasm('←メェ メェ', PRESETS[0]);
     await expect(execWasm(back.wasm, new Uint8Array(), () => {})).rejects.toThrow();
   });
+});
+
+describe('i18n', () => {
+  it('reports compile errors in the selected language', () => {
+    const src = 'function f(n) { return f(n); } f(1);';
+    try {
+      setLocale('en');
+      expect(() => compileJs(src)).toThrow(/Recursion/);
+      setLocale('zh');
+      expect(() => compileJs(src)).toThrow(/递归/);
+    } finally {
+      setLocale('ja');
+    }
+    expect(() => compileJs(src)).toThrow(/再帰/);
+  });
+});
+
+describe('language spec is honest', () => {
+  // everything the spec lists as unsupported must be rejected with an error…
+  const rejected: Array<[string, string]> = [
+    ['exponent', 'let x = 2 ** 3;'],
+    ['bitwise or', 'let a = 1, b = 2; let c = a | b;'],
+    ['xor', 'let a = 1, b = 2; let c = a ^ b;'],
+    ['shift by variable', 'let a = 1, b = 2; let c = a << b;'],
+    ['typeof', 'let a = typeof 1;'],
+    ['optional chaining', 'let a = [1]; let b = a?.[0];'],
+    ['switch', 'let a = 1; switch (a) { case 1: break; }'],
+    ['try', 'try { } catch (e) { }'],
+    ['throw', 'throw 1;'],
+    ['labeled break', 'outer: for (;;) { break outer; }'],
+    ['recursion', 'function f(n) { return f(n); } f(1);'],
+    ['indirect recursion', 'function a() { return b(); } function b() { return a(); } a();'],
+    ['function as value', 'function f() { return 1; } let g = f;'],
+    ['callback', 'function f(cb) { return cb(); } f(() => 1);'],
+    ['default param', 'function f(a = 1) { return a; } f();'],
+    ['object', 'let o = { a: 1 };'],
+    ['class', 'class A {}'],
+    ['this', 'let a = this;'],
+    ['destructuring', 'let [a, b] = [1, 2];'],
+    ['array method', 'let a = [1, 2]; a.push(3);'],
+    ['string value', 'let s = "ab"; let t = s + "c";'],
+    ['2d array', 'let a = [[1], [2]];'],
+    ['dynamic array length', 'let n = 3; let a = new Array(n);'],
+    ['Math.random', 'let r = Math.random();'],
+    ['async', 'async function f() {}'],
+  ];
+  for (const [name, code] of rejected) {
+    it(`rejects ${name}`, () => {
+      expect(() => compileJs(code)).toThrow();
+    });
+  }
+  // …and everything listed as supported must compile.
+  const accepted: Array<[string, string]> = [
+    ['ops', 'let a = 5, b = 3; let c = a + b - a * b / 1 % 2; c += 1; c -= 1; c *= 2; c /= 2; c %= 7; c++; c--; let d = ~a; let e = a << 2; let f = a >> 1; let g = a & 3;'],
+    ['compare & logic', 'let a = 1, b = 2; let c = (a == b) || (a != b) && !(a < b) || a <= b || a > b || a >= b || a === b || a !== b; let d = a ? 1 : 2;'],
+    ['control', 'for (let i = 0; i < 3; i++) { if (i == 1) continue; if (i == 2) break; } let j = 0; while (j < 2) j++; do { j--; } while (j > 0); for (const x of [1, 2]) print(x);'],
+    ['functions', 'function f(a) { return a + 1; } const g = (x) => x * 2; console.log(f(g(3)));'],
+    ['arrays & strings', 'let a = [1, 2, 3]; let b = new Array(5).fill(7); const s = "hi"; let i = 1; a[i] = b[i] + s.charCodeAt(i) + a.length;'],
+    ['io & builtins', 'let c = getchar(); putchar(c); print(c); console.log(readInt(), `v=${c}`); process.stdout.write("x"); let m = Math.min(1, 2) + Math.max(1, 2) + Math.floor(3) + Math.abs(4); console.log(String.fromCharCode(65));'],
+  ];
+  for (const [name, code] of accepted) {
+    it(`accepts ${name}`, () => {
+      expect(() => compileJs(code)).not.toThrow();
+    });
+  }
 });

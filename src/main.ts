@@ -1,13 +1,14 @@
 import './style.css';
 import type { EditorView } from 'codemirror';
-import { EXAMPLES } from './examples';
-import { BF_OPS, OP_LABELS, PRESETS, checkDialect, translate, type BfOp, type Dialect } from './compiler/dialect';
+import { getExamples, identifyExample } from './examples';
+import { BF_OPS, PRESETS, checkDialect, dialectName, normalizeDialect, opLabel, translate, type BfOp, type Dialect } from './compiler/dialect';
 import { jsToMeeme, meemeToWasm, MeemeError, type FrontResult } from './compiler/pipeline';
 import { buildCompiler, GeneratedCompileError, type GeneratedCompiler } from './compiler/compilergen';
 import { CompileError } from './compiler/frontend';
 import { disassemble, hexdump } from './compiler/disasm';
 import { createJsEditor, createMeemeEditor, markErrorLine, onUserEdit, setDocProgrammatically, setEditorDialect } from './ui/editors';
 import type { WorkerMessage, WorkerRequest } from './runtime/worker';
+import { LOCALES, detectLocale, getLocale, setLocale, spec, t, type Locale, type MessageKey } from './i18n';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const TIMEOUT_MS = 5000;
@@ -34,7 +35,10 @@ const store = {
 
 // ───────────────────────── state ─────────────────────────
 
-let dialect: Dialect = store.get<Dialect>('dialect', PRESETS[0]);
+const savedLocale = store.get<Locale | null>('locale', null);
+setLocale(savedLocale && LOCALES.some((l) => l.id === savedLocale) ? savedLocale : detectLocale(navigator.languages ?? [navigator.language]));
+
+let dialect: Dialect = normalizeDialect(store.get<Partial<Dialect> | null>('dialect', null)) ?? PRESETS[0];
 if (checkDialect(dialect).errors.length) dialect = PRESETS[0];
 let front: FrontResult | null = null;
 /** The program.wasm currently shown/run, and how it was produced. */
@@ -55,18 +59,19 @@ let meemeDirty = false;
 let activeTab = 'output';
 let worker: Worker | null = null;
 let runTimer: number | undefined;
+let lastRun: { runMs: number; instantiateMs: number } | null = null;
 
 const debounce = <A extends unknown[]>(f: (...a: A) => void, ms: number) => {
-  let t: number | undefined;
+  let timer: number | undefined;
   return (...a: A) => {
-    clearTimeout(t);
-    t = window.setTimeout(() => f(...a), ms);
+    clearTimeout(timer);
+    timer = window.setTimeout(() => f(...a), ms);
   };
 };
 
 // ───────────────────────── editors ─────────────────────────
 
-const initialExample = EXAMPLES.find((e) => e.id === store.get('example', 'hello')) ?? EXAMPLES[0];
+const initialExample = getExamples(getLocale()).find((e) => e.id === store.get('example', 'hello')) ?? getExamples(getLocale())[0];
 const jsView: EditorView = createJsEditor($('js-editor'), store.get('js', initialExample.code), debounce(onJsChange, 350));
 const meemeView: EditorView = createMeemeEditor($('meeme-editor'), debounce(onMeemeChange, 250));
 setEditorDialect(meemeView, dialect);
@@ -81,27 +86,32 @@ function onJsChange(src: string) {
   compileFront(src);
 }
 
-function compileFront(src: string) {
+/** Compile the JS. With `keepMeeme`, only refresh status/messages (used when the middle pane is hand-edited). */
+function compileFront(src: string, keepMeeme = false) {
   const status = $('js-status');
   const msgs = $('js-messages');
   msgs.replaceChildren();
+  let result: FrontResult;
   try {
-    front = jsToMeeme(src, dialect);
+    result = jsToMeeme(src, dialect);
   } catch (e) {
     front = null;
     const line = e instanceof CompileError ? e.line : undefined;
     status.className = 'status err';
-    status.textContent = line ? `✗ ${line}行目でエラー` : '✗ エラー';
-    msgs.append(el('div', 'error', (line ? `${line}行目: ` : '') + (e as Error).message));
+    status.textContent = line ? t('status.jsErrLine', { line }) : t('status.error');
+    const msg = (e as Error).message;
+    msgs.append(el('div', 'error', line ? t('msg.line', { line, msg }) : msg));
     markErrorLine(jsView, line ?? null);
     renderStats();
     return;
   }
+  front = result;
   markErrorLine(jsView, null);
   status.className = 'status ok';
-  status.textContent = `✓ ${front.bf.length.toLocaleString()} 命令`;
-  for (const w of front.warnings) msgs.append(el('div', 'warn', `⚠ ${w}`));
-  setDocProgrammatically(meemeView, front.meeme);
+  status.textContent = t('status.jsOk', { n: result.bf.length.toLocaleString() });
+  for (const w of result.warnings) msgs.append(el('div', 'warn', `⚠ ${w}`));
+  if (keepMeeme) return renderStats();
+  setDocProgrammatically(meemeView, result.meeme);
   setDirty(false);
   pulse(0);
   // the meeme editor's change listener triggers stage 2
@@ -148,9 +158,10 @@ async function compileBack(text: string) {
     let line: number | null = null;
     const offset = e instanceof MeemeError || e instanceof GeneratedCompileError ? e.offset : undefined;
     if (offset != null) line = meemeView.state.doc.lineAt(Math.min(offset, meemeView.state.doc.length)).number;
-    msgs.append(el('div', 'error', (line ? `${line}行目: ` : '') + (e as Error).message));
+    const msg = (e as Error).message;
+    msgs.append(el('div', 'error', line ? t('msg.line', { line, msg }) : msg));
     markErrorLine(meemeView, line);
-    setRunStatus('err', '✗ コンパイルできません');
+    setRunStatus('err', t('status.cannotCompile'));
     renderStats();
     return;
   }
@@ -165,8 +176,8 @@ async function compileBack(text: string) {
 function setDirty(d: boolean) {
   meemeDirty = d;
   const badge = $('meeme-badge');
-  badge.textContent = d ? '手で編集中' : 'JSから生成';
-  badge.title = d ? '中央のテキストを直接書き換えています。実行されるのはこのテキストです（左の JS とは別物になっています）' : '左の JavaScript からコンパイルされたテキストです';
+  badge.textContent = t(d ? 'badge.dirty' : 'badge.generated');
+  badge.title = t(d ? 'badge.dirtyTitle' : 'badge.generatedTitle');
   badge.classList.toggle('dirty', d);
   $('regen').hidden = !d;
   renderStats();
@@ -183,9 +194,9 @@ function run() {
   out.replaceChildren();
   decoder.current = new TextDecoder();
   const input = new TextEncoder().encode($<HTMLTextAreaElement>('stdin').value);
-  setRunStatus('', '実行中…');
+  setRunStatus('', t('status.running'));
   const runBtn = $('run');
-  runBtn.textContent = '■ 停止';
+  runBtn.textContent = t('ui.stop');
   runBtn.classList.add('running');
 
   worker = new Worker(new URL('./runtime/worker.ts', import.meta.url), { type: 'module' });
@@ -201,39 +212,37 @@ function run() {
     finish();
     if (m.type === 'done') {
       lastRun = { runMs: m.runMs, instantiateMs: m.instantiateMs };
-      setRunStatus('ok', `✓ 終了（${fmtMs(m.runMs)}）`);
+      setRunStatus('ok', t('status.done', { ms: fmtMs(m.runMs) }));
       renderTape(m.tape, m.ptr);
       bounce();
     } else {
-      out.append(el('div', 'sys err', `\n✗ 実行時エラー: ${m.message}`));
-      setRunStatus('err', '✗ 実行時エラー');
+      out.append(el('div', 'sys err', '\n' + t('out.runtimeError', { msg: m.message })));
+      setRunStatus('err', t('status.runtimeError'));
     }
     renderStats();
   };
   worker.onerror = (e) => {
     finish();
     out.append(el('div', 'sys err', `\n✗ ${e.message}`));
-    setRunStatus('err', '✗ エラー');
+    setRunStatus('err', t('status.error'));
   };
-  const req: WorkerRequest = { wasm: built.wasm, input };
+  const req: WorkerRequest = { wasm: built.wasm, input, locale: getLocale() };
   worker.postMessage(req);
   runTimer = window.setTimeout(() => {
     stopWorker();
-    out.append(el('div', 'sys err', `\n⏱ ${TIMEOUT_MS / 1000} 秒経っても終わらないので停止しました（無限ループかも？）`));
-    setRunStatus('err', '⏱ タイムアウト');
+    out.append(el('div', 'sys err', '\n' + t('out.timeout', { s: TIMEOUT_MS / 1000 })));
+    setRunStatus('err', t('status.timeout'));
     lastRun = null;
     renderStats();
   }, TIMEOUT_MS);
 }
-
-let lastRun: { runMs: number; instantiateMs: number } | null = null;
 
 function finish() {
   clearTimeout(runTimer);
   worker?.terminate();
   worker = null;
   const runBtn = $('run');
-  runBtn.textContent = '▶ 実行';
+  runBtn.textContent = t('ui.run');
   runBtn.classList.remove('running');
 }
 
@@ -257,7 +266,7 @@ function renderArtifacts() {
   if (!built) return;
   if (activeTab === 'wat') {
     const { text, truncated } = disassemble(built.wasm);
-    $('wat').textContent = text + (truncated ? '\n;; …長いので省略しました' : '');
+    $('wat').textContent = text + (truncated ? '\n' + t('wat.truncated') : '');
   }
   if (activeTab === 'hex') $('hex').textContent = hexdump(built.wasm);
 }
@@ -267,21 +276,12 @@ function renderCompilerTab() {
   box.replaceChildren();
   const c = currentCompiler;
   if (!c) {
-    box.append(el('p', '', 'コンパイラを生成中…'));
+    box.append(el('p', '', t('compiler.generating')));
     return;
   }
-  const intro = el(
-    'p',
-    '',
-    `命令セット「${c.dialect.name}」から生成した、${c.dialect.name}専用の Wasm コンパイラです（${c.bytes.length.toLocaleString()} bytes、生成 ${fmtMs(c.genMs)}）。` +
-      `関数 $match が字句解析器で、命令文字列の Trie がそのまま分岐コードになっています。` +
-      `$compile は中央のテキスト（UTF-8）を受け取り、program.wasm のバイト列を書き出します。`,
-  );
-  const note = el(
-    'p',
-    mode === 'gen' ? 'active-note' : '',
-    mode === 'gen' ? '▶ いま実行されている program.wasm は、このコンパイラが作ったものです。' : '（いまは「JS 実装」のコンパイラを使っています。上部の切り替えで、このコンパイラに変えられます）',
-  );
+  const name = dialectName(c.dialect);
+  const intro = el('p', '', t('compiler.intro', { dialect: name, bytes: c.bytes.length.toLocaleString(), ms: fmtMs(c.genMs) }));
+  const note = el('p', mode === 'gen' ? 'active-note' : '', t(mode === 'gen' ? 'compiler.active' : 'compiler.inactive'));
   // token → UTF-8 bytes, to make the branches in $match readable
   const table = el('table');
   const enc = new TextEncoder();
@@ -292,7 +292,7 @@ function renderCompilerTab() {
   }
   const pre = el('pre', 'wat-inline');
   pre.textContent = disassemble(c.bytes, { names: COMPILER_FN_NAMES }).text;
-  box.append(intro, note, el('p', '', '命令と UTF-8 バイト列（$match の i32.const と対応しています）:'), table, pre);
+  box.append(intro, note, el('p', '', t('compiler.bytesTable')), table, pre);
 }
 
 function renderCompilerInfo() {
@@ -300,13 +300,13 @@ function renderCompilerInfo() {
   info.classList.toggle('inactive', mode !== 'gen');
   const c = currentCompiler;
   if (!c) {
-    info.textContent = '⚙ コンパイラを生成中…';
+    info.textContent = '⚙ ' + t('compiler.generating');
     return;
   }
   info.replaceChildren();
-  const link = el('button', 'linkish', `${c.dialect.name}コンパイラ.wasm`);
+  const link = el('button', 'linkish', t('compiler.fileName', { dialect: dialectName(c.dialect) }));
   link.onclick = () => selectTab('compiler');
-  info.append('⚙ 命令セットから ', link, ` を生成（${c.bytes.length.toLocaleString()} bytes / ${fmtMs(c.genMs)}）`);
+  info.append(t('compiler.infoBefore'), link, t('compiler.infoAfter', { bytes: c.bytes.length.toLocaleString(), ms: fmtMs(c.genMs) }));
   if (activeTab === 'compiler') renderCompilerTab();
 }
 
@@ -316,7 +316,7 @@ function renderTape(tape: Uint8Array, ptr: number) {
   let last = 0;
   for (let i = 0; i < tape.length; i++) if (tape[i]) last = i;
   const n = Math.max(32, Math.min(tape.length, Math.ceil((Math.max(last, ptr) + 1) / 8) * 8));
-  box.append(el('p', '', `実行後のテープ（先頭 ${n} セル）。枠が光っているのが最終的なポインタ位置 ${ptr} です。`));
+  box.append(el('p', '', t('tape.caption', { n, ptr })));
   const grid = el('div', 'tape-grid');
   for (let i = 0; i < n; i++) {
     const c = el('div', `cell${tape[i] ? ' nz' : ''}${i === ptr ? ' ptr' : ''}`, String(tape[i]));
@@ -334,15 +334,16 @@ function renderStats() {
     d.append(el('b', '', value));
     s.append(d);
   };
-  if (front) add('JS → 羊語', fmtMs(front.ms));
+  const name = dialectName(dialect);
+  if (front) add(`JS → ${name}`, fmtMs(front.ms));
   if (built) {
-    add(`羊語 → Wasm（${built.via === 'gen' ? '生成コンパイラ' : 'JS実装'}）`, fmtMs(built.ms));
-    add('羊語', `${meemeView.state.doc.length.toLocaleString()} 文字`);
-    add('BF命令', built.irOps != null ? `${built.ops.toLocaleString()} → 最適化後 ${built.irOps.toLocaleString()}` : built.ops.toLocaleString());
+    add(`${name} → Wasm（${t(built.via === 'gen' ? 'stats.viaGen' : 'stats.viaJs')}）`, fmtMs(built.ms));
+    add(name, t('stats.chars', { n: meemeView.state.doc.length.toLocaleString() }));
+    add(t('stats.bfOps'), built.irOps != null ? t('stats.optimized', { a: built.ops.toLocaleString(), b: built.irOps.toLocaleString() }) : built.ops.toLocaleString());
     add('Wasm', `${built.wasm.length.toLocaleString()} bytes`);
   }
-  if (lastRun) add('実行', fmtMs(lastRun.runMs));
-  if (front && !meemeDirty) add('使用セル', `${front.cells}`);
+  if (lastRun) add(t('stats.run'), fmtMs(lastRun.runMs));
+  if (front && !meemeDirty) add(t('stats.cells'), `${front.cells}`);
 }
 
 function renderLegend() {
@@ -351,29 +352,65 @@ function renderLegend() {
   const cls: Record<BfOp, string> = { '>': 'tk-move', '<': 'tk-move', '+': 'tk-add', '-': 'tk-sub', '.': 'tk-io', ',': 'tk-io', '[': 'tk-loop', ']': 'tk-loop' };
   for (const op of BF_OPS) {
     const chip = el('span', 'chip');
-    chip.title = OP_LABELS[op];
+    chip.title = opLabel(op);
     chip.append(el('span', cls[op], dialect.tokens[op]), el('code', '', op));
     box.append(chip);
   }
-  $('meeme-title').textContent = dialect.name;
-  $('tagline-dialect').textContent = dialect.name;
+  $('meeme-title').textContent = dialectName(dialect);
+  $('tagline-dialect').textContent = dialectName(dialect);
+}
+
+// ───────────────────────── language spec ─────────────────────────
+
+/** Render text with `code` spans. */
+function richText(parent: HTMLElement, text: string) {
+  text.split('`').forEach((part, i) => {
+    if (!part) return;
+    parent.append(i % 2 ? el('code', '', part) : document.createTextNode(part));
+  });
+}
+
+function renderSpecStrip() {
+  const chips = $('spec-chips');
+  chips.replaceChildren(...spec().summary.map((s) => el('span', 'spec-chip', s)));
+}
+
+function openSpec() {
+  const body = $('spec-body');
+  body.replaceChildren();
+  const s = spec();
+  const intro = el('p', 'hint');
+  richText(intro, s.intro);
+  body.append(intro);
+  const icon = { ok: '✅', ng: '❌', note: 'ℹ️' } as const;
+  for (const sec of s.sections) {
+    const h = el('h3', '', sec.title);
+    const ul = el('ul', 'spec-list');
+    for (const [kind, text] of sec.items) {
+      const li = el('li', `spec-${kind}`);
+      li.append(el('span', 'spec-icon', icon[kind]));
+      const span = el('span');
+      richText(span, text);
+      li.append(span);
+      ul.append(li);
+    }
+    body.append(h, ul);
+  }
+  $<HTMLDialogElement>('spec-dialog').showModal();
 }
 
 // ───────────────────────── dialects ─────────────────────────
 
 function allDialects(): Dialect[] {
-  const custom = store.get<Dialect | null>('custom', null);
-  return custom ? [...PRESETS, custom] : PRESETS;
+  const custom = normalizeDialect(store.get<Partial<Dialect> | null>('custom', null));
+  return custom && custom.id === 'custom' ? [...PRESETS, custom] : PRESETS;
 }
 
 function fillDialectSelect() {
   const sel = $<HTMLSelectElement>('dialect-select');
   sel.replaceChildren();
-  for (const d of allDialects()) {
-    const o = new Option(d.name, d.name);
-    sel.append(o);
-  }
-  sel.value = dialect.name;
+  for (const d of allDialects()) sel.append(new Option(dialectName(d), d.id));
+  sel.value = dialect.id;
 }
 
 function applyDialect(next: Dialect) {
@@ -407,12 +444,12 @@ function openDialectEditor() {
     input.spellcheck = false;
     input.addEventListener('input', validate);
     inputs[op] = input;
-    label.append(el('code', '', op), el('span', '', OP_LABELS[op]), input);
+    label.append(el('code', '', op), el('span', '', opLabel(op)), input);
     grid.append(label);
   }
-  presets.replaceChildren(el('span', 'hint', 'プリセット:'));
+  presets.replaceChildren(el('span', 'hint', t('dialog.presets')));
   for (const p of PRESETS) {
-    const b = el('button', 'btn tiny', p.name) as HTMLButtonElement;
+    const b = el('button', 'btn tiny', dialectName(p)) as HTMLButtonElement;
     b.type = 'button';
     b.onclick = () => {
       for (const op of BF_OPS) inputs[op].value = p.tokens[op];
@@ -423,8 +460,7 @@ function openDialectEditor() {
   const current = (): Dialect => {
     const tokens = {} as Record<BfOp, string>;
     for (const op of BF_OPS) tokens[op] = inputs[op].value;
-    const preset = PRESETS.find((p) => BF_OPS.every((op) => p.tokens[op] === tokens[op]));
-    return { name: preset?.name ?? 'カスタム', tokens };
+    return normalizeDialect({ tokens })!;
   };
   function validate() {
     const errs = $('dialect-errors');
@@ -432,27 +468,78 @@ function openDialectEditor() {
     const check = checkDialect(current());
     for (const op of BF_OPS) inputs[op].classList.toggle('bad', !inputs[op].value.trim());
     for (const e of check.errors) errs.append(el('div', 'error', `✗ ${e}`));
-    if (!check.errors.length && check.needsSeparator) errs.append(el('div', 'warn', '⚠ 命令をつなげて書くと区別できない組み合わせがあるので、命令の間に空白を入れて表示します'));
+    if (!check.errors.length && check.needsSeparator) errs.append(el('div', 'warn', t('dialog.needsSeparator')));
     $<HTMLButtonElement>('dialect-apply').disabled = check.errors.length > 0;
   }
   validate();
   dlg.onclose = () => {
     if (dlg.returnValue !== 'apply') return;
     const d = current();
-    if (d.name === 'カスタム') store.set('custom', d);
+    if (d.id === 'custom') store.set('custom', d);
     applyDialect(d);
   };
   dlg.showModal();
+}
+
+// ───────────────────────── i18n ─────────────────────────
+
+function applyStaticTexts() {
+  const loc = LOCALES.find((l) => l.id === getLocale())!;
+  document.documentElement.lang = loc.htmlLang;
+  document.querySelectorAll<HTMLElement>('[data-i18n]').forEach((n) => (n.textContent = t(n.dataset.i18n as MessageKey)));
+  document.querySelectorAll<HTMLElement>('[data-i18n-title]').forEach((n) => (n.title = t(n.dataset.i18nTitle as MessageKey)));
+  document.querySelectorAll<HTMLTextAreaElement>('[data-i18n-placeholder]').forEach((n) => (n.placeholder = t(n.dataset.i18nPlaceholder as MessageKey)));
+  document.querySelector('meta[name=description]')?.setAttribute('content', t('app.description'));
+  if (worker) $('run').textContent = t('ui.stop');
+}
+
+function fillLocaleSelect() {
+  const sel = $<HTMLSelectElement>('locale-select');
+  sel.replaceChildren(...LOCALES.map((l) => new Option(l.label, l.id)));
+  sel.value = getLocale();
+  sel.onchange = () => changeLocale(sel.value as Locale);
+}
+
+function changeLocale(next: Locale) {
+  const prev = getLocale();
+  if (next === prev) return;
+  // Swap untouched example code / input to the new language.
+  const code = jsView.state.doc.toString();
+  const exId = identifyExample(code);
+  const stdin = $<HTMLTextAreaElement>('stdin');
+  const prevEx = exId ? getExamples(prev).find((e) => e.id === exId) : undefined;
+  setLocale(next);
+  store.set('locale', next);
+  applyStaticTexts();
+  fillExamples();
+  fillDialectSelect();
+  renderLegend();
+  renderSpecStrip();
+  renderCompilerInfo();
+  setDirty(meemeDirty);
+  const nextEx = exId ? getExamples(next).find((e) => e.id === exId) : undefined;
+  if (nextEx && prevEx && (stdin.value === (prevEx.input ?? ''))) {
+    stdin.value = nextEx.input ?? '';
+    store.set('stdin', stdin.value);
+  }
+  if (nextEx && nextEx.code !== code) {
+    jsView.dispatch({ changes: { from: 0, to: jsView.state.doc.length, insert: nextEx.code } });
+  } else {
+    // re-render messages in the new language
+    compileFront(code, meemeDirty);
+    if (meemeDirty) compileBack(meemeView.state.doc.toString());
+  }
+  renderArtifacts();
 }
 
 // ───────────────────────── wiring ─────────────────────────
 
 function fillExamples() {
   const sel = $<HTMLSelectElement>('example-select');
-  sel.append(new Option('— 選んでください —', ''));
-  for (const ex of EXAMPLES) sel.append(new Option(ex.title, ex.id));
+  sel.replaceChildren(new Option(t('ui.samplePick'), ''));
+  for (const ex of getExamples(getLocale())) sel.append(new Option(ex.title, ex.id));
   sel.onchange = () => {
-    const ex = EXAMPLES.find((e) => e.id === sel.value);
+    const ex = getExamples(getLocale()).find((e) => e.id === sel.value);
     if (!ex) return;
     store.set('example', ex.id);
     $<HTMLTextAreaElement>('stdin').value = ex.input ?? '';
@@ -463,11 +550,12 @@ function fillExamples() {
 }
 
 $<HTMLSelectElement>('dialect-select').onchange = (e) => {
-  const d = allDialects().find((x) => x.name === (e.target as HTMLSelectElement).value);
+  const d = allDialects().find((x) => x.id === (e.target as HTMLSelectElement).value);
   if (d) applyDialect(d);
 };
 $('dialect-edit').onclick = openDialectEditor;
-$('run').onclick = () => (worker ? (stopWorker(), setRunStatus('err', '■ 停止しました')) : run());
+$('spec-open').onclick = openSpec;
+$('run').onclick = () => (worker ? (stopWorker(), setRunStatus('err', t('status.stopped'))) : run());
 $('regen').onclick = () => compileFront(jsView.state.doc.toString());
 $<HTMLTextAreaElement>('stdin').addEventListener(
   'input',
@@ -478,7 +566,7 @@ $<HTMLTextAreaElement>('stdin').addEventListener(
 );
 function selectTab(name: string) {
   activeTab = name;
-  document.querySelectorAll<HTMLElement>('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll<HTMLElement>('.tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.tab === name));
   document.querySelectorAll<HTMLElement>('.view').forEach((v) => v.classList.toggle('active', v.dataset.view === name));
   renderArtifacts();
 }
@@ -528,9 +616,13 @@ function bounce() {
 
 // ───────────────────────── boot ─────────────────────────
 
+applyStaticTexts();
+fillLocaleSelect();
 fillExamples();
 fillDialectSelect();
 renderLegend();
+renderSpecStrip();
 renderCompilerInfo();
+setDirty(false);
 void getCompiler();
 compileFront(jsView.state.doc.toString());

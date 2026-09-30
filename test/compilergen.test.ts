@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EXAMPLES } from '../src/examples';
+import { getExamples } from '../src/examples';
 import { jsToMeeme, meemeToWasm } from '../src/compiler/pipeline';
 import { PRESETS } from '../src/compiler/dialect';
 import { buildCompiler, generateCompiler, GeneratedCompileError } from '../src/compiler/compilergen';
@@ -21,9 +21,9 @@ describe('generated meeme-compiler.wasm', () => {
   });
 
   for (const d of PRESETS) {
-    it(`compiles every example like the JS pipeline (${d.name})`, async () => {
+    it(`compiles every example like the JS pipeline (${d.id})`, async () => {
       const compiler = await buildCompiler(d);
-      for (const ex of EXAMPLES) {
+      for (const ex of getExamples('ja')) {
         const meeme = jsToMeeme(ex.code, d).meeme;
         const ref = meemeToWasm(meeme, d);
         const gen = compiler.compile(meeme);

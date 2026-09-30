@@ -2,6 +2,8 @@
 // what you read is what runs. Covers the MVP opcodes used by Baabel's
 // generators (control flow, locals, i32 arithmetic, memory access, calls).
 
+import { t } from '../i18n';
+
 type Imm = 'none' | 'blocktype' | 'idx' | 'memarg' | 'i32' | 'brtable';
 
 const OPS: Record<number, [string, Imm]> = {
@@ -278,6 +280,6 @@ export function hexdump(bytes: Uint8Array, maxBytes = 8192): string {
     const ascii = row.map((b) => (b >= 32 && b < 127 ? String.fromCharCode(b) : '·')).join('');
     out.push(`${i.toString(16).padStart(6, '0')}  ${hex.padEnd(47)}  ${ascii}`);
   }
-  if (bytes.length > n) out.push(`… 残り ${bytes.length - n} バイト`);
+  if (bytes.length > n) out.push(t('hex.rest', { n: bytes.length - n }));
   return out.join('\n');
 }

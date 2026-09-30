@@ -14,6 +14,7 @@
 import { BF_OPS, type BfOp, type Dialect } from './dialect';
 import { Asm } from './asm';
 import { programHeader, sleb, uleb } from './wasm';
+import { t as tr } from '../i18n';
 
 const OP_CODE: Record<BfOp, number> = { '>': 1, '<': 2, '+': 3, '-': 4, '.': 5, ',': 6, '[': 7, ']': 8 };
 
@@ -451,7 +452,7 @@ export async function buildCompiler(d: Dialect): Promise<GeneratedCompiler> {
       const len = ex.compile(src.length);
       if (len < 0) {
         const at = new TextDecoder().decode(src.subarray(0, ex.err_pos())).length;
-        throw new GeneratedCompileError(len === -1 ? '対応するループ開始のないループ終了があります' : '閉じられていないループ開始があります', at);
+        throw new GeneratedCompileError(tr(len === -1 ? 'bf.unmatchedClose' : 'bf.unclosedOpen'), at);
       }
       const wasm = new Uint8Array(ex.mem.buffer, ex.out_ptr(), len).slice();
       return { wasm, ops: ex.op_count(), ms: performance.now() - t };

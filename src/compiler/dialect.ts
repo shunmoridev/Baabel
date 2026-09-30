@@ -5,47 +5,55 @@
 // from the middle pane. Characters that match no token are comments, exactly
 // like in standard Brainfuck.
 
+import { t, type MessageKey } from '../i18n';
+
 export const BF_OPS = ['>', '<', '+', '-', '.', ',', '[', ']'] as const;
 export type BfOp = (typeof BF_OPS)[number];
 
-export const OP_LABELS: Record<BfOp, string> = {
-  '>': 'ポインタを右へ',
-  '<': 'ポインタを左へ',
-  '+': '値を +1',
-  '-': '値を -1',
-  '.': '出力',
-  ',': '入力',
-  '[': 'ループ開始',
-  ']': 'ループ終了',
-};
+export function opLabel(op: BfOp): string {
+  return t(`op.${op}` as MessageKey);
+}
 
 export interface Dialect {
-  name: string;
+  /** Preset id ('sheep', 'bf', …) or 'custom'. */
+  id: string;
   tokens: Record<BfOp, string>;
 }
 
 export const PRESETS: Dialect[] = [
   {
-    name: '羊語',
+    id: 'sheep',
     tokens: { '>': 'メェ→', '<': '←メェ', '+': 'メェ', '-': 'ベェ', '.': 'メェ！', ',': 'メェ？', '[': '群れ', ']': '解散' },
   },
   {
-    name: 'Brainfuck',
+    id: 'bf',
     tokens: { '>': '>', '<': '<', '+': '+', '-': '-', '.': '.', ',': ',', '[': '[', ']': ']' },
   },
   {
-    name: 'Ook!',
+    id: 'ook',
     tokens: { '>': 'Ook. Ook?', '<': 'Ook? Ook.', '+': 'Ook. Ook.', '-': 'Ook! Ook!', '.': 'Ook! Ook.', ',': 'Ook. Ook!', '[': 'Ook! Ook?', ']': 'Ook? Ook!' },
   },
   {
-    name: '猫語',
+    id: 'cat',
     tokens: { '>': 'にゃ', '<': 'みゃ', '+': 'にゃーん', '-': 'しゃー', '.': 'ごろごろ', ',': 'すりすり', '[': 'ふみ', ']': 'ふみふみ' },
   },
   {
-    name: '絵文字',
+    id: 'emoji',
     tokens: { '>': '👉', '<': '👈', '+': '👍', '-': '👎', '.': '📣', ',': '👂', '[': '🔁', ']': '🔚' },
   },
 ];
+
+export function dialectName(d: Dialect): string {
+  return PRESETS.some((p) => p.id === d.id) ? t(`dialect.${d.id}` as MessageKey) : t('dialect.custom');
+}
+
+/** Restore a dialect saved by an older version (which stored `name` instead of `id`). */
+export function normalizeDialect(d: Partial<Dialect> | null | undefined): Dialect | null {
+  if (!d?.tokens) return null;
+  const tokens = d.tokens;
+  const preset = PRESETS.find((p) => BF_OPS.every((op) => p.tokens[op] === tokens[op]));
+  return preset ?? { id: 'custom', tokens };
+}
 
 // ───────────────────────── validation ─────────────────────────
 
@@ -59,12 +67,12 @@ export function checkDialect(d: Dialect): DialectCheck {
   const errors: string[] = [];
   const seen = new Map<string, BfOp>();
   for (const op of BF_OPS) {
-    const t = d.tokens[op];
-    if (!t) errors.push(`「${op}」の命令が空です`);
-    else if (t !== t.trim()) errors.push(`「${op}」の命令の前後に空白は使えません`);
-    else if (/[\r\n]/.test(t)) errors.push(`「${op}」の命令に改行は使えません`);
-    else if (seen.has(t)) errors.push(`「${seen.get(t)}」と「${op}」が同じ文字列です`);
-    else seen.set(t, op);
+    const tok = d.tokens[op];
+    if (!tok) errors.push(t('dialect.empty', { op }));
+    else if (tok !== tok.trim()) errors.push(t('dialect.space', { op }));
+    else if (/[\r\n]/.test(tok)) errors.push(t('dialect.newline', { op }));
+    else if (seen.has(tok)) errors.push(t('dialect.duplicate', { a: seen.get(tok)!, b: op }));
+    else seen.set(tok, op);
   }
   if (errors.length) return { errors, needsSeparator: false };
   const lexer = new Lexer(d);
@@ -81,7 +89,7 @@ export function checkDialect(d: Dialect): DialectCheck {
   };
   if (!spaced && roundTrips('')) return { errors, needsSeparator: false };
   if (roundTrips(' ')) return { errors, needsSeparator: true };
-  errors.push('命令どうしが区別できません（ある命令が別の命令の組み合わせと重なっています）');
+  errors.push(t('dialect.ambiguous'));
   return { errors, needsSeparator: true };
 }
 

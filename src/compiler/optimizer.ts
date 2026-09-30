@@ -6,6 +6,8 @@
 //   [->+>++<<]     → mul (cell[p+1] += cell[p]*1, cell[p+2] += cell[p]*2), clear
 //   [>] / [<<]     → scan
 
+import { t } from '../i18n';
+
 export type Op =
   | { k: 'add'; o: number; n: number }
   | { k: 'move'; n: number }
@@ -60,14 +62,14 @@ function parseRaw(bf: string): Raw[] {
         break;
       case ']': {
         const top = stack.pop();
-        if (!top) throw new BracketError('対応するループ開始のないループ終了があります', i);
+        if (!top) throw new BracketError(t('bf.unmatchedClose'), i);
         top.list.push({ k: 'loop', body: cur });
         cur = top.list;
         break;
       }
     }
   }
-  if (stack.length) throw new BracketError('閉じられていないループ開始があります', stack[stack.length - 1].at);
+  if (stack.length) throw new BracketError(t('bf.unclosedOpen'), stack[stack.length - 1].at);
   return cur;
 }
 

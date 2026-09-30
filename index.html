@@ -21,44 +21,53 @@
       </div>
       <div class="controls">
         <label class="field">
-          <span>サンプル</span>
+          <span data-i18n="ui.sample">サンプル</span>
           <select id="example-select"></select>
         </label>
         <label class="field">
-          <span>命令セット</span>
+          <span data-i18n="ui.dialect">命令セット</span>
           <select id="dialect-select"></select>
         </label>
-        <button id="dialect-edit" class="btn ghost" type="button">✎ 編集</button>
+        <button id="dialect-edit" class="btn ghost" type="button" data-i18n="ui.edit">✎ 編集</button>
         <label class="field">
-          <span>Wasm化</span>
-          <select id="mode-select" title="中央のテキストを program.wasm にするコンパイラ。「生成した .wasm」は命令セットから生成した専用コンパイラ（それ自体が Wasm）、「JS 実装」は最適化が強めの TypeScript 実装です">
-            <option value="gen">生成した .wasm</option>
-            <option value="js">JS 実装</option>
+          <span data-i18n="ui.mode">Wasm化</span>
+          <select id="mode-select" data-i18n-title="ui.modeTitle">
+            <option value="gen" data-i18n="ui.modeGen">生成した .wasm</option>
+            <option value="js" data-i18n="ui.modeJs">JS 実装</option>
           </select>
         </label>
-        <label class="toggle"><input id="autorun" type="checkbox" checked /> 自動実行</label>
-        <button id="run" class="btn primary" type="button">▶ 実行</button>
+        <label class="toggle"><input id="autorun" type="checkbox" checked /> <span data-i18n="ui.autorun">自動実行</span></label>
+        <button id="run" class="btn primary" type="button" data-i18n="ui.run">▶ 実行</button>
+        <label class="field lang" title="Language / 言語 / 语言">
+          <span aria-hidden="true">🌐</span>
+          <select id="locale-select" aria-label="Language"></select>
+        </label>
       </div>
     </header>
 
     <main class="panes">
       <section class="pane" id="pane-js">
         <header class="pane-head">
-          <div class="pane-title"><span class="step">1</span> JavaScript <small>高級言語</small></div>
+          <div class="pane-title"><span class="step">1</span> JavaScript <small data-i18n="pane.jsSub">高級言語</small></div>
           <div id="js-status" class="status"></div>
         </header>
         <div class="editor" id="js-editor"></div>
         <div id="js-messages" class="messages"></div>
+        <div class="spec-strip">
+          <span class="spec-label" data-i18n="spec.label">制約</span>
+          <span id="spec-chips" class="spec-chips"></span>
+          <button id="spec-open" class="linkish" type="button" data-i18n="spec.open">言語仕様</button>
+        </div>
       </section>
 
-      <div class="arrow" aria-hidden="true"><span>コンパイル</span></div>
+      <div class="arrow" aria-hidden="true"><span data-i18n="arrow.compile">コンパイル</span></div>
 
       <section class="pane" id="pane-meeme">
         <header class="pane-head">
-          <div class="pane-title"><span class="step">2</span> <span id="meeme-title">羊語</span> <small>実行されるソース</small></div>
+          <div class="pane-title"><span class="step">2</span> <span id="meeme-title">羊語</span> <small data-i18n="pane.meemeSub">実行されるソース</small></div>
           <div class="pane-actions">
-            <span id="meeme-badge" class="badge">JSから生成</span>
-            <button id="regen" class="btn tiny" type="button" hidden>JSから再生成</button>
+            <span id="meeme-badge" class="badge"></span>
+            <button id="regen" class="btn tiny" type="button" hidden data-i18n="ui.regen">JSから再生成</button>
           </div>
         </header>
         <div class="editor" id="meeme-editor"></div>
@@ -67,19 +76,19 @@
         <div id="meeme-messages" class="messages"></div>
       </section>
 
-      <div class="arrow" aria-hidden="true"><span>コンパイル</span></div>
+      <div class="arrow" aria-hidden="true"><span data-i18n="arrow.compile">コンパイル</span></div>
 
       <section class="pane" id="pane-out">
         <header class="pane-head">
-          <div class="pane-title"><span class="step">3</span> 実行 <small>WebAssembly</small></div>
+          <div class="pane-title"><span class="step">3</span> <span data-i18n="pane.run">実行</span> <small>WebAssembly</small></div>
           <div id="run-status" class="status"></div>
         </header>
         <nav class="tabs" role="tablist">
-          <button class="tab active" data-tab="output" type="button">出力</button>
-          <button class="tab" data-tab="wat" type="button">WAT</button>
-          <button class="tab" data-tab="hex" type="button">バイナリ</button>
-          <button class="tab" data-tab="tape" type="button">テープ</button>
-          <button class="tab" data-tab="compiler" type="button">コンパイラ</button>
+          <button class="tab active" data-tab="output" type="button" data-i18n="tab.output">出力</button>
+          <button class="tab" data-tab="wat" type="button" data-i18n="tab.wat">WAT</button>
+          <button class="tab" data-tab="hex" type="button" data-i18n="tab.hex">バイナリ</button>
+          <button class="tab" data-tab="tape" type="button" data-i18n="tab.tape">テープ</button>
+          <button class="tab" data-tab="compiler" type="button" data-i18n="tab.compiler">コンパイラ</button>
         </nav>
         <div class="tab-body">
           <pre id="output" class="view active" data-view="output"></pre>
@@ -89,8 +98,8 @@
           <div id="compiler" class="view" data-view="compiler"></div>
         </div>
         <label class="stdin">
-          <span>標準入力</span>
-          <textarea id="stdin" rows="2" spellcheck="false" placeholder="getchar() / readInt() で読まれます"></textarea>
+          <span data-i18n="ui.stdin">標準入力</span>
+          <textarea id="stdin" rows="2" spellcheck="false" data-i18n-placeholder="ui.stdinPlaceholder"></textarea>
         </label>
       </section>
     </main>
@@ -99,14 +108,24 @@
 
     <dialog id="dialect-dialog">
       <form method="dialog" id="dialect-form">
-        <h2>命令セットを編集</h2>
-        <p class="hint">8 つの命令それぞれの書き方を決めます。ここで決めた文字列から字句解析器が作られ、中央のテキストが本当にその言語として解釈されます。どの命令にも当てはまらない文字はコメント扱いです。</p>
+        <h2 data-i18n="dialog.title">命令セットを編集</h2>
+        <p class="hint" data-i18n="dialog.hint"></p>
         <div class="preset-row" id="preset-row"></div>
         <div class="token-grid" id="token-grid"></div>
         <div id="dialect-errors" class="messages"></div>
         <div class="dialog-actions">
-          <button value="cancel" class="btn ghost" type="submit" formnovalidate>キャンセル</button>
-          <button value="apply" id="dialect-apply" class="btn primary" type="submit">適用</button>
+          <button value="cancel" class="btn ghost" type="submit" formnovalidate data-i18n="dialog.cancel">キャンセル</button>
+          <button value="apply" id="dialect-apply" class="btn primary" type="submit" data-i18n="dialog.apply">適用</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="spec-dialog" class="spec-dialog">
+      <form method="dialog">
+        <h2 data-i18n="spec.title">書ける JavaScript</h2>
+        <div id="spec-body"></div>
+        <div class="dialog-actions">
+          <button value="close" class="btn primary" type="submit" data-i18n="ui.close">閉じる</button>
         </div>
       </form>
     </dialog>

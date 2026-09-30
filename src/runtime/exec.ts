@@ -1,5 +1,7 @@
 // Instantiate and run a compiled program. Shared by the Web Worker and tests.
 
+import { t } from '../i18n';
+
 export const OUTPUT_LIMIT = 1 << 20; // 1 MiB
 
 export interface ExecResult {
@@ -14,7 +16,7 @@ export class ExecError extends Error {}
 
 export function friendlyTrap(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
-  if (/out of bounds/i.test(msg)) return 'テープの範囲外にアクセスしました（ポインタが 0 未満か 65535 を超えました）';
+  if (/out of bounds/i.test(msg)) return t('rt.outOfBounds');
   return msg;
 }
 
@@ -33,7 +35,7 @@ export async function execWasm(bytes: Uint8Array, input: Uint8Array, onOutput: (
       buf.push(c & 0xff);
       if (++total > OUTPUT_LIMIT) {
         flush();
-        throw new ExecError('出力が 1MB を超えたので停止しました');
+        throw new ExecError(t('rt.outputLimit'));
       }
       if (buf.length >= 4096 || performance.now() - last > 50) flush();
     },

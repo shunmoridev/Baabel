@@ -7,6 +7,7 @@
 
 import { parse } from 'acorn';
 import { BfGen } from './bfgen';
+import { t as tr } from '../i18n';
 
 // acorn's ESTree typings are precise but very noisy to narrow in a compiler
 // that pattern-matches on shapes all the time, so AST nodes are loosely typed.
@@ -177,7 +178,7 @@ class Compiler {
     if (this.warned.has(node)) return;
     this.warned.add(node);
     const line = node?.loc?.start.line;
-    this.warnings.push(line ? `${line}行目: ${msg}` : msg);
+    this.warnings.push(line ? tr('msg.line', { line, msg }) : msg);
   }
 
   // ───────────────────────── program / statements ─────────────────────────
@@ -195,9 +196,10 @@ class Compiler {
     }
   }
 
-  declareFunc(name: string, node: N, params: N[], body: N[]) {
-    for (const p of params) if (p.type !== 'Identifier') this.err(p, '引数は単純な名前のみ対応しています');
-    if (this.scope.vars.has(name) && this.scope.vars.get(name)!.kind !== 'func') this.err(node, `${name} は既に宣言されています`);
+  declareFunc(name: string, node: N, params: N[], body: N[], fn: N = node) {
+    if (fn.async || fn.generator) this.err(node, tr('err.asyncGenerator'));
+    for (const p of params) if (p.type !== 'Identifier') this.err(p, tr('err.paramSimple'));
+    if (this.scope.vars.has(name) && this.scope.vars.get(name)!.kind !== 'func') this.err(node, tr('err.redeclared', { name }));
     this.scope.vars.set(name, { kind: 'func', def: { name, params, body, scope: this.scope } });
   }
 
@@ -293,15 +295,15 @@ class Compiler {
         return this.compileForOf(s);
       case 'BreakStatement':
       case 'ContinueStatement': {
-        if (s.label) this.err(s, 'ラベル付き break / continue は未対応です');
+        if (s.label) this.err(s, tr('err.labeled'));
         const loop = this.loops[this.loops.length - 1];
-        if (!loop) this.err(s, `ループの外で ${s.type === 'BreakStatement' ? 'break' : 'continue'} は使えません`);
+        if (!loop) this.err(s, tr('err.jumpOutsideLoop', { kw: s.type === 'BreakStatement' ? 'break' : 'continue' }));
         const flag = s.type === 'BreakStatement' ? loop.brk : loop.cont;
         this.g.add(flag!, 1);
         return;
       }
       case 'ReturnStatement': {
-        if (!this.fn) this.err(s, '関数の外で return は使えません');
+        if (!this.fn) this.err(s, tr('err.returnOutsideFn'));
         if (s.argument) {
           const t = this.evalExpr(s.argument);
           this.g.moveAdd(t, [[this.fn.retCell, 1]]);
@@ -311,19 +313,19 @@ class Compiler {
         return;
       }
       default:
-        this.err(s, `未対応の構文です: ${s.type}`);
+        this.err(s, tr('err.unsupportedStmt', { type: s.type }));
     }
   }
 
   compileVarDecl(s: N) {
     for (const d of s.declarations) {
-      if (d.id.type !== 'Identifier') this.err(d, '分割代入は未対応です');
+      if (d.id.type !== 'Identifier') this.err(d, tr('err.destructuring'));
       const name: string = d.id.name;
-      if (this.scope.vars.has(name)) this.err(d, `${name} は既に宣言されています`);
+      if (this.scope.vars.has(name)) this.err(d, tr('err.redeclared', { name }));
       const init = d.init;
       if (init && (init.type === 'ArrowFunctionExpression' || init.type === 'FunctionExpression')) {
         const body = init.body.type === 'BlockStatement' ? init.body.body : [{ type: 'ReturnStatement', argument: init.body, loc: init.body.loc }];
-        this.declareFunc(name, d, init.params, body);
+        this.declareFunc(name, d, init.params, body, init);
         continue;
       }
       const arr = init && this.arrayInit(init);
@@ -351,7 +353,7 @@ class Compiler {
   /** Recognise array initialisers: [..], "string", Array(n), new Array(n).fill(v). */
   arrayInit(init: N): { values: Array<N | number>; isString: boolean } | null {
     if (init.type === 'ArrayExpression') {
-      for (const e of init.elements) if (!e || e.type === 'SpreadElement') this.err(init, '配列リテラルの空要素・スプレッドは未対応です');
+      for (const e of init.elements) if (!e || e.type === 'SpreadElement') this.err(init, tr('err.arrayHoles'));
       return { values: init.elements, isString: false };
     }
     if (init.type === 'Literal' && typeof init.value === 'string') {
@@ -364,12 +366,12 @@ class Compiler {
       ctor = init.callee.object;
     }
     if ((ctor.type === 'NewExpression' || ctor.type === 'CallExpression') && ctor.callee.type === 'Identifier' && ctor.callee.name === 'Array') {
-      if (ctor.arguments.length !== 1) this.err(ctor, 'Array(n) の形で長さを指定してください');
+      if (ctor.arguments.length !== 1) this.err(ctor, tr('err.arrayLenArg'));
       const n = this.constValueRaw(ctor.arguments[0]);
-      if (n === null || n < 0) this.err(ctor, '配列の長さは定数である必要があります');
-      if (n > 1000) this.err(ctor, '配列の長さは 1000 までです');
+      if (n === null || n < 0) this.err(ctor, tr('err.arrayLenConst'));
+      if (n > 1000) this.err(ctor, tr('err.arrayLenMax'));
       const fv = fill ? this.constValue(fill) : 0;
-      if (fv === null) this.err(fill, 'fill の値は定数である必要があります');
+      if (fv === null) this.err(fill, tr('err.fillConst'));
       return { values: new Array(n).fill(fv), isString: false };
     }
     return null;
@@ -473,7 +475,7 @@ class Compiler {
   }
 
   compileForOf(s: N) {
-    if (s.left.type !== 'VariableDeclaration' || s.left.declarations[0].id.type !== 'Identifier') this.err(s, 'for (const x of 配列) の形で書いてください');
+    if (s.left.type !== 'VariableDeclaration' || s.left.declarations[0].id.type !== 'Identifier') this.err(s, tr('err.forOfForm'));
     const name = s.left.declarations[0].id.name;
     this.pushScope();
     let arr: Sym | undefined;
@@ -481,8 +483,12 @@ class Compiler {
     else if (s.right.type === 'Literal' && typeof s.right.value === 'string') {
       this.declareArray('%forof', utf8(s.right.value), true);
       arr = this.scope.vars.get('%forof');
+    } else if (s.right.type === 'ArrayExpression') {
+      const lit = this.arrayInit(s.right)!;
+      this.declareArray('%forof', lit.values, false);
+      arr = this.scope.vars.get('%forof');
     }
-    if (!arr || arr.kind !== 'array') this.err(s.right, 'for...of は配列か文字列にのみ使えます');
+    if (!arr || arr.kind !== 'array') this.err(s.right, tr('err.forOfTarget'));
     const a = arr;
     const idx = this.g.alloc();
     this.scope.vars.set('%idx', { kind: 'var', cell: idx });
@@ -539,10 +545,10 @@ class Compiler {
         if (typeof node.value === 'number') {
           let v = node.value;
           if (!Number.isInteger(v)) {
-            this.warn(node, `${v} は整数に切り捨てられます`);
+            this.warn(node, tr('warn.truncated', { v }));
             v = Math.trunc(v);
           }
-          if (v > 255) this.warn(node, `${v} は 8bit (0〜255) に丸められ ${wrap(v)} になります`);
+          if (v > 255) this.warn(node, tr('warn.wrapped', { v, w: wrap(v) }));
           return wrap(v);
         }
         return null;
@@ -714,19 +720,19 @@ class Compiler {
     switch (node.type) {
       case 'Identifier': {
         const s = this.scope.lookup(node.name);
-        if (!s) this.err(node, `${node.name} は定義されていません`);
+        if (!s) this.err(node, tr('err.undefined', { name: node.name }));
         if (s.kind === 'var') return this.g.copy(s.cell);
-        if (s.kind === 'array') this.err(node, `配列 ${node.name} は数値として使えません（${node.name}[i] で要素を参照してください）`);
-        this.err(node, `関数 ${node.name} は値として使えません`);
+        if (s.kind === 'array') this.err(node, tr('err.arrayAsNumber', { name: node.name }));
+        this.err(node, tr('err.fnAsValue', { name: node.name }));
         break;
       }
       case 'Literal':
-        if (typeof node.value === 'string') this.err(node, '文字列は console.log / print の中か、変数の初期値（文字配列）としてのみ使えます');
+        if (typeof node.value === 'string') this.err(node, tr('err.stringValue'));
         if (node.value === null) return this.g.alloc();
-        this.err(node, `未対応のリテラルです: ${node.raw}`);
+        this.err(node, tr('err.unsupportedLiteral', { raw: node.raw }));
         break;
       case 'TemplateLiteral':
-        this.err(node, 'テンプレート文字列は console.log / print の中でのみ使えます');
+        this.err(node, tr('err.templateOnlyOutput'));
         break;
       case 'UnaryExpression': {
         const op = node.operator;
@@ -744,7 +750,7 @@ class Compiler {
           this.evalEffect(node.argument);
           return this.g.alloc();
         }
-        this.err(node, `未対応の演算子です: ${op}`);
+        this.err(node, tr('err.unsupportedOperator', { op }));
         break;
       }
       case 'BinaryExpression':
@@ -790,7 +796,7 @@ class Compiler {
       case 'ParenthesizedExpression':
         return this.evalExpr(node.expression);
     }
-    this.err(node, `未対応の式です: ${node.type}`);
+    this.err(node, tr('err.unsupportedExpr', { type: node.type }));
   }
 
   binary(op: string, l: N, r: N, node: N): number {
@@ -829,7 +835,7 @@ class Compiler {
       }
       case '/':
       case '%': {
-        if (c === 0) this.err(node, '0 で割ることはできません');
+        if (c === 0) this.err(node, tr('err.divByZero'));
         const { q, r } = this.divmodConst(a, c);
         const [keep, drop] = op === '/' ? [q, r] : [r, q];
         g.release(drop);
@@ -912,7 +918,7 @@ class Compiler {
       case '>=':
         return this.not(this.lt(a, b));
     }
-    this.err(node, `演算子 ${op} は未対応です（& は 2^n-1 との & のみ、<< >> は定数シフトのみ対応）`);
+    this.err(node, tr('err.unsupportedBinary', { op }));
   }
 
   /** r = !t (t consumed). */
@@ -1061,7 +1067,7 @@ class Compiler {
       g.free(e);
       return r;
     }
-    this.err(node, `未対応の演算子です: ${node.operator}`);
+    this.err(node, tr('err.unsupportedOperator', { op: node.operator }));
   }
 
   // ───────────────────────── lvalues / arrays ─────────────────────────
@@ -1069,23 +1075,23 @@ class Compiler {
   lvalue(node: N): { cell: number } | { arr: Extract<Sym, { kind: 'array' }>; idx: number } {
     if (node.type === 'Identifier') {
       const s = this.scope.lookup(node.name);
-      if (!s) this.err(node, `${node.name} は定義されていません`);
-      if (s.kind === 'const') this.err(node, `定数 ${node.name} には代入できません`);
-      if (s.kind !== 'var') this.err(node, `${node.name} には代入できません`);
+      if (!s) this.err(node, tr('err.undefined', { name: node.name }));
+      if (s.kind === 'const') this.err(node, tr('err.assignConst', { name: node.name }));
+      if (s.kind !== 'var') this.err(node, tr('err.notAssignable', { name: node.name }));
       return { cell: s.cell };
     }
     if (node.type === 'MemberExpression' && node.computed) {
-      if (node.object.type !== 'Identifier') this.err(node, '配列は変数名で参照してください');
+      if (node.object.type !== 'Identifier') this.err(node, tr('err.arrayByName'));
       const s = this.scope.lookup(node.object.name);
-      if (!s || s.kind !== 'array') this.err(node.object, `${node.object.name} は配列ではありません`);
+      if (!s || s.kind !== 'array') this.err(node.object, tr('err.notArray', { name: node.object.name }));
       const k = this.constValueRaw(node.property);
       if (k !== null) {
-        if (k < 0 || k >= s.length) this.err(node.property, `添字 ${k} は配列の範囲外です（長さ ${s.length}）`);
+        if (k < 0 || k >= s.length) this.err(node.property, tr('err.indexOutOfRange', { k, len: s.length }));
         return { cell: this.elemCell(s, k) };
       }
       return { arr: s, idx: this.evalExpr(node.property) };
     }
-    this.err(node, '代入先として使えない式です');
+    this.err(node, tr('err.badAssignTarget'));
   }
 
   readLV(lv: ReturnType<Compiler['lvalue']>): number {
@@ -1209,7 +1215,7 @@ class Compiler {
         g.release(r);
         return null;
       }
-      this.err(c, `${c.name} は定義されていません`);
+      this.err(c, tr('err.undefined', { name: c.name }));
     }
 
     if (c.type === 'MemberExpression' && !c.computed) {
@@ -1227,7 +1233,7 @@ class Compiler {
       if (obj === 'Math') {
         if (['floor', 'ceil', 'round', 'trunc', 'abs'].includes(prop)) return want ? this.evalExpr(args[0]) : (this.evalEffect(args[0]), null);
         if (prop === 'min' || prop === 'max') {
-          if (args.length !== 2) this.err(node, `Math.${prop} は引数 2 つで使ってください`);
+          if (args.length !== 2) this.err(node, tr('err.mathArgs', { fn: prop }));
           const a = this.evalExpr(args[0]);
           const b = this.evalExpr(args[1]);
           const less = this.lt(g.copy(a), g.copy(b));
@@ -1260,14 +1266,14 @@ class Compiler {
           return want ? r : (g.release(r), null);
         }
       }
-      this.err(node, `${obj ?? '?'}.${prop}() は未対応です`);
+      this.err(node, tr('err.unsupportedMethod', { name: `${obj ?? '?'}.${prop}` }));
     }
-    this.err(node, 'この関数呼び出しは未対応です');
+    this.err(node, tr('err.unsupportedCall'));
   }
 
   inline(def: FuncDef, args: N[], node: N): number {
-    if (this.inlineStack.includes(def.name)) this.err(node, `再帰呼び出し（${[...this.inlineStack, def.name].join(' → ')}）は未対応です（関数はすべてインライン展開されます）`);
-    if (this.inlineStack.length > 32) this.err(node, '関数呼び出しのネストが深すぎます');
+    if (this.inlineStack.includes(def.name)) this.err(node, tr('err.recursion', { chain: [...this.inlineStack, def.name].join(' → ') }));
+    if (this.inlineStack.length > 32) this.err(node, tr('err.tooDeep'));
     const bindings: Array<[string, Sym]> = [];
     def.params.forEach((p: N, i: number) => {
       const a = args[i];
@@ -1452,7 +1458,7 @@ export function compileJs(src: string): CompileResult {
     ast = parse(src, { ecmaVersion: 'latest', sourceType: 'script', locations: true });
   } catch (e) {
     const err = e as { message: string; loc?: { line: number; column: number } };
-    throw new CompileError(`構文エラー: ${err.message}`, err.loc?.line, err.loc?.column);
+    throw new CompileError(tr('err.syntax', { msg: err.message }), err.loc?.line, err.loc?.column);
   }
   const c = new Compiler();
   c.compileProgram(ast.body);
