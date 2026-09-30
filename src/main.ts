@@ -2,7 +2,8 @@ import './style.css';
 import type { EditorView } from 'codemirror';
 import { EXAMPLES } from './examples';
 import { BF_OPS, OP_LABELS, PRESETS, checkDialect, translate, type BfOp, type Dialect } from './compiler/dialect';
-import { jsToMeeme, meemeToWasm, MeemeError, type BackResult, type FrontResult } from './compiler/pipeline';
+import { jsToMeeme, meemeToWasm, MeemeError, type FrontResult } from './compiler/pipeline';
+import { buildCompiler, GeneratedCompileError, type GeneratedCompiler } from './compiler/compilergen';
 import { CompileError } from './compiler/frontend';
 import { disassemble, hexdump } from './compiler/disasm';
 import { createJsEditor, createMeemeEditor, markErrorLine, onUserEdit, setDocProgrammatically, setEditorDialect } from './ui/editors';
@@ -36,7 +37,20 @@ const store = {
 let dialect: Dialect = store.get<Dialect>('dialect', PRESETS[0]);
 if (checkDialect(dialect).errors.length) dialect = PRESETS[0];
 let front: FrontResult | null = null;
-let back: BackResult | null = null;
+/** The program.wasm currently shown/run, and how it was produced. */
+interface Built {
+  wasm: Uint8Array;
+  ops: number;
+  irOps: number | null;
+  ms: number;
+  via: 'gen' | 'js';
+}
+let built: Built | null = null;
+type Mode = 'gen' | 'js';
+let mode: Mode = store.get<Mode>('mode', 'gen');
+let compilerCache: { dialect: Dialect; promise: Promise<GeneratedCompiler> } | null = null;
+let currentCompiler: GeneratedCompiler | null = null;
+let backSeq = 0;
 let meemeDirty = false;
 let activeTab = 'output';
 let worker: Worker | null = null;
@@ -99,21 +113,48 @@ function onMeemeChange(text: string) {
   compileBack(text);
 }
 
-function compileBack(text: string) {
+function getCompiler(): Promise<GeneratedCompiler> {
+  if (compilerCache?.dialect !== dialect) {
+    const d = dialect;
+    const promise = buildCompiler(d).then((c) => {
+      if (dialect === d) {
+        currentCompiler = c;
+        renderCompilerInfo();
+      }
+      return c;
+    });
+    compilerCache = { dialect: d, promise };
+  }
+  return compilerCache.promise;
+}
+
+async function compileBack(text: string) {
+  const seq = ++backSeq;
   const msgs = $('meeme-messages');
-  msgs.replaceChildren();
   try {
-    back = meemeToWasm(text, dialect);
+    if (mode === 'gen') {
+      const c = await getCompiler();
+      if (seq !== backSeq) return;
+      const r = c.compile(text);
+      built = { wasm: r.wasm, ops: r.ops, irOps: null, ms: r.ms, via: 'gen' };
+    } else {
+      const r = meemeToWasm(text, dialect);
+      built = { wasm: r.wasm, ops: r.rawOps, irOps: r.irOps, ms: r.lexMs + r.optMs + r.emitMs, via: 'js' };
+    }
   } catch (e) {
-    back = null;
+    if (seq !== backSeq) return;
+    built = null;
+    msgs.replaceChildren();
     let line: number | null = null;
-    if (e instanceof MeemeError && e.offset != null) line = meemeView.state.doc.lineAt(e.offset).number;
+    const offset = e instanceof MeemeError || e instanceof GeneratedCompileError ? e.offset : undefined;
+    if (offset != null) line = meemeView.state.doc.lineAt(Math.min(offset, meemeView.state.doc.length)).number;
     msgs.append(el('div', 'error', (line ? `${line}行目: ` : '') + (e as Error).message));
     markErrorLine(meemeView, line);
     setRunStatus('err', '✗ コンパイルできません');
     renderStats();
     return;
   }
+  msgs.replaceChildren();
   markErrorLine(meemeView, null);
   pulse(1);
   renderArtifacts();
@@ -136,7 +177,7 @@ function setDirty(d: boolean) {
 const decoder = { current: new TextDecoder() };
 
 function run() {
-  if (!back) return;
+  if (!built) return;
   stopWorker();
   const out = $('output');
   out.replaceChildren();
@@ -174,7 +215,7 @@ function run() {
     out.append(el('div', 'sys err', `\n✗ ${e.message}`));
     setRunStatus('err', '✗ エラー');
   };
-  const req: WorkerRequest = { wasm: back.wasm, input };
+  const req: WorkerRequest = { wasm: built.wasm, input };
   worker.postMessage(req);
   runTimer = window.setTimeout(() => {
     stopWorker();
@@ -209,13 +250,64 @@ function setRunStatus(kind: '' | 'ok' | 'err', text: string) {
 
 // ───────────────────────── views ─────────────────────────
 
+const COMPILER_FN_NAMES = { 0: 'match', 1: 'emit_byte', 2: 'emit_sleb', 3: 'write5' };
+
 function renderArtifacts() {
-  if (!back) return;
+  if (activeTab === 'compiler') return renderCompilerTab();
+  if (!built) return;
   if (activeTab === 'wat') {
-    const { text, truncated } = disassemble(back.wasm);
+    const { text, truncated } = disassemble(built.wasm);
     $('wat').textContent = text + (truncated ? '\n;; …長いので省略しました' : '');
   }
-  if (activeTab === 'hex') $('hex').textContent = hexdump(back.wasm);
+  if (activeTab === 'hex') $('hex').textContent = hexdump(built.wasm);
+}
+
+function renderCompilerTab() {
+  const box = $('compiler');
+  box.replaceChildren();
+  const c = currentCompiler;
+  if (!c) {
+    box.append(el('p', '', 'コンパイラを生成中…'));
+    return;
+  }
+  const intro = el(
+    'p',
+    '',
+    `命令セット「${c.dialect.name}」から生成した、${c.dialect.name}専用の Wasm コンパイラです（${c.bytes.length.toLocaleString()} bytes、生成 ${fmtMs(c.genMs)}）。` +
+      `関数 $match が字句解析器で、命令文字列の Trie がそのまま分岐コードになっています。` +
+      `$compile は中央のテキスト（UTF-8）を受け取り、program.wasm のバイト列を書き出します。`,
+  );
+  const note = el(
+    'p',
+    mode === 'gen' ? 'active-note' : '',
+    mode === 'gen' ? '▶ いま実行されている program.wasm は、このコンパイラが作ったものです。' : '（いまは「JS 実装」のコンパイラを使っています。上部の切り替えで、このコンパイラに変えられます）',
+  );
+  // token → UTF-8 bytes, to make the branches in $match readable
+  const table = el('table');
+  const enc = new TextEncoder();
+  for (const op of BF_OPS) {
+    const tr = el('tr');
+    tr.append(el('td', '', c.dialect.tokens[op]), el('td', '', op), el('td', '', Array.from(enc.encode(c.dialect.tokens[op])).join(' ')));
+    table.append(tr);
+  }
+  const pre = el('pre', 'wat-inline');
+  pre.textContent = disassemble(c.bytes, { names: COMPILER_FN_NAMES }).text;
+  box.append(intro, note, el('p', '', '命令と UTF-8 バイト列（$match の i32.const と対応しています）:'), table, pre);
+}
+
+function renderCompilerInfo() {
+  const info = $('compiler-info');
+  info.classList.toggle('inactive', mode !== 'gen');
+  const c = currentCompiler;
+  if (!c) {
+    info.textContent = '⚙ コンパイラを生成中…';
+    return;
+  }
+  info.replaceChildren();
+  const link = el('button', 'linkish', `${c.dialect.name}コンパイラ.wasm`);
+  link.onclick = () => selectTab('compiler');
+  info.append('⚙ 命令セットから ', link, ` を生成（${c.bytes.length.toLocaleString()} bytes / ${fmtMs(c.genMs)}）`);
+  if (activeTab === 'compiler') renderCompilerTab();
 }
 
 function renderTape(tape: Uint8Array, ptr: number) {
@@ -243,12 +335,11 @@ function renderStats() {
     s.append(d);
   };
   if (front) add('JS → 羊語', fmtMs(front.ms));
-  if (back) {
-    add('羊語 → Wasm', fmtMs(back.lexMs + back.optMs + back.emitMs));
+  if (built) {
+    add(`羊語 → Wasm（${built.via === 'gen' ? '生成コンパイラ' : 'JS実装'}）`, fmtMs(built.ms));
     add('羊語', `${meemeView.state.doc.length.toLocaleString()} 文字`);
-    add('BF命令', `${back.rawOps.toLocaleString()} → 最適化後 ${back.irOps.toLocaleString()}`);
-    add('Wasm', `${back.wasm.length.toLocaleString()} bytes`);
-    if (back.commentChars) add('コメント扱い', `${back.commentChars} 文字`);
+    add('BF命令', built.irOps != null ? `${built.ops.toLocaleString()} → 最適化後 ${built.irOps.toLocaleString()}` : built.ops.toLocaleString());
+    add('Wasm', `${built.wasm.length.toLocaleString()} bytes`);
   }
   if (lastRun) add('実行', fmtMs(lastRun.runMs));
   if (front && !meemeDirty) add('使用セル', `${front.cells}`);
@@ -290,6 +381,9 @@ function applyDialect(next: Dialect) {
   dialect = next;
   store.set('dialect', next);
   setEditorDialect(meemeView, next);
+  currentCompiler = null;
+  renderCompilerInfo();
+  void getCompiler();
   renderLegend();
   fillDialectSelect();
   // Translate what is in the middle pane, so hand edits survive.
@@ -382,14 +476,23 @@ $<HTMLTextAreaElement>('stdin').addEventListener(
     if ($<HTMLInputElement>('autorun').checked) run();
   }, 400),
 );
+function selectTab(name: string) {
+  activeTab = name;
+  document.querySelectorAll<HTMLElement>('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll<HTMLElement>('.view').forEach((v) => v.classList.toggle('active', v.dataset.view === name));
+  renderArtifacts();
+}
 document.querySelectorAll<HTMLButtonElement>('.tab').forEach((tab) => {
-  tab.onclick = () => {
-    activeTab = tab.dataset.tab!;
-    document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t === tab));
-    document.querySelectorAll<HTMLElement>('.view').forEach((v) => v.classList.toggle('active', v.dataset.view === activeTab));
-    renderArtifacts();
-  };
+  tab.onclick = () => selectTab(tab.dataset.tab!);
 });
+const modeSelect = $<HTMLSelectElement>('mode-select');
+modeSelect.value = mode;
+modeSelect.onchange = () => {
+  mode = modeSelect.value as Mode;
+  store.set('mode', mode);
+  renderCompilerInfo();
+  compileBack(meemeView.state.doc.toString());
+};
 window.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
     e.preventDefault();
@@ -428,4 +531,6 @@ function bounce() {
 fillExamples();
 fillDialectSelect();
 renderLegend();
+renderCompilerInfo();
+void getCompiler();
 compileFront(jsView.state.doc.toString());

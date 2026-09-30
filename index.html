@@ -29,6 +29,13 @@
           <select id="dialect-select"></select>
         </label>
         <button id="dialect-edit" class="btn ghost" type="button">✎ 編集</button>
+        <label class="field">
+          <span>Wasm化</span>
+          <select id="mode-select" title="中央のテキストを program.wasm にするコンパイラ。「生成した .wasm」は命令セットから生成した専用コンパイラ（それ自体が Wasm）、「JS 実装」は最適化が強めの TypeScript 実装です">
+            <option value="gen">生成した .wasm</option>
+            <option value="js">JS 実装</option>
+          </select>
+        </label>
         <label class="toggle"><input id="autorun" type="checkbox" checked /> 自動実行</label>
         <button id="run" class="btn primary" type="button">▶ 実行</button>
       </div>
@@ -56,6 +63,7 @@
         </header>
         <div class="editor" id="meeme-editor"></div>
         <div id="legend" class="legend"></div>
+        <div id="compiler-info" class="compiler-info"></div>
         <div id="meeme-messages" class="messages"></div>
       </section>
 
@@ -68,15 +76,17 @@
         </header>
         <nav class="tabs" role="tablist">
           <button class="tab active" data-tab="output" type="button">出力</button>
-          <button class="tab" data-tab="wat" type="button">Wasm (WAT)</button>
+          <button class="tab" data-tab="wat" type="button">WAT</button>
           <button class="tab" data-tab="hex" type="button">バイナリ</button>
           <button class="tab" data-tab="tape" type="button">テープ</button>
+          <button class="tab" data-tab="compiler" type="button">コンパイラ</button>
         </nav>
         <div class="tab-body">
           <pre id="output" class="view active" data-view="output"></pre>
           <pre id="wat" class="view" data-view="wat"></pre>
           <pre id="hex" class="view" data-view="hex"></pre>
           <div id="tape" class="view" data-view="tape"></div>
+          <div id="compiler" class="view" data-view="compiler"></div>
         </div>
         <label class="stdin">
           <span>標準入力</span>

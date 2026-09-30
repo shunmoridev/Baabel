@@ -98,14 +98,15 @@ class Reader {
 const VALTYPE: Record<number, string> = { 0x7f: 'i32', 0x7e: 'i64', 0x7d: 'f32', 0x7c: 'f64' };
 const KIND = ['func', 'table', 'memory', 'global'];
 
-export function disassemble(bytes: Uint8Array, maxLines = 20000): { text: string; truncated: boolean } {
+export function disassemble(bytes: Uint8Array, opts: { maxLines?: number; names?: Record<number, string> } = {}): { text: string; truncated: boolean } {
+  const maxLines = opts.maxLines ?? 20000;
+  const funcNames = new Map<number, string>(Object.entries(opts.names ?? {}).map(([k, v]) => [Number(k), v]));
   const r = new Reader(bytes, 8);
   const lines: string[] = ['(module'];
   const types: string[] = [];
   const funcTypes: number[] = [];
   let importedFuncs = 0;
   let truncated = false;
-  const exportNames = new Map<number, string>();
 
   while (r.i < bytes.length) {
     const id = r.u8();
@@ -133,6 +134,7 @@ export function disassemble(bytes: Uint8Array, maxLines = 20000): { text: string
           if (kind === 0) {
             const t = r.uleb();
             lines.push(`  (import "${mod}" "${nm}" (func $${nm} (;${importedFuncs};) (type ${t})))`);
+            if (!funcNames.has(importedFuncs)) funcNames.set(importedFuncs, nm);
             funcTypes.push(t);
             importedFuncs++;
           } else {
@@ -164,7 +166,7 @@ export function disassemble(bytes: Uint8Array, maxLines = 20000): { text: string
           const nm = r.name();
           const kind = r.u8();
           const idx = r.uleb();
-          if (kind === 0) exportNames.set(idx, nm);
+          if (kind === 0 && !funcNames.has(idx)) funcNames.set(idx, nm);
           lines.push(`  (export "${nm}" (${KIND[kind]} ${idx}))`);
         }
         break;
@@ -182,7 +184,7 @@ export function disassemble(bytes: Uint8Array, maxLines = 20000): { text: string
             const t = VALTYPE[r.u8()];
             for (let c = 0; c < count; c++) locals.push(t);
           }
-          const name = exportNames.get(fidx);
+          const name = funcNames.get(fidx);
           lines.push(`  (func ${name ? `$${name} ` : ''}(;${fidx};) (type ${funcTypes[fidx]})${types[funcTypes[fidx]] ?? ''}`);
           if (locals.length) lines.push(`    (local ${locals.join(' ')})`);
           let depth = 2;
@@ -218,7 +220,8 @@ export function disassemble(bytes: Uint8Array, maxLines = 20000): { text: string
             }
             if (nm === 'call') {
               const target = Number(arg);
-              arg += ` (;$${exportNames.get(target) ?? (target === 0 ? 'putc' : target === 1 ? 'getc' : target)};)`;
+              const fname = funcNames.get(target);
+              if (fname) arg = ` $${fname}`;
             }
             if (nm === 'end' || nm === 'else') depth--;
             if (r.i >= bodyEnd && nm === 'end') break; // function end
@@ -227,6 +230,33 @@ export function disassemble(bytes: Uint8Array, maxLines = 20000): { text: string
           }
           lines.push('  )');
           r.i = bodyEnd;
+        }
+        break;
+      }
+      case 6: {
+        const n = r.uleb();
+        for (let k = 0; k < n; k++) {
+          const t = VALTYPE[r.u8()];
+          const mut = r.u8();
+          r.u8(); // i32.const
+          const v = r.sleb();
+          r.u8(); // end
+          lines.push(`  (global (;${k};) ${mut ? `(mut ${t})` : t} (i32.const ${v}))`);
+        }
+        break;
+      }
+      case 11: {
+        const n = r.uleb();
+        for (let k = 0; k < n; k++) {
+          r.uleb(); // flags
+          r.u8(); // i32.const
+          const at = r.sleb();
+          r.u8(); // end
+          const len = r.uleb();
+          const data = bytes.subarray(r.i, r.i + len);
+          r.i += len;
+          const esc = Array.from(data.subarray(0, 48), (b) => (b >= 32 && b < 127 && b !== 34 && b !== 92 ? String.fromCharCode(b) : '\\' + b.toString(16).padStart(2, '0'))).join('');
+          lines.push(`  (data (i32.const ${at}) "${esc}${len > 48 ? '…' : ''}")  ;; ${len} bytes`);
         }
         break;
       }

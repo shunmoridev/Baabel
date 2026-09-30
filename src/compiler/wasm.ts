@@ -148,7 +148,8 @@ class CodeWriter {
   }
 }
 
-export function emitWasm(ops: Op[]): Uint8Array {
+/** Everything before the code section: identical for every program. */
+export function programHeader(): number[] {
   const I32 = 0x7f;
   const FUNC = 0x60;
   const types = vec([
@@ -165,15 +166,7 @@ export function emitWasm(ops: Op[]): Uint8Array {
     [...str('run'), 0x00, 2],
     [...str('tape'), 0x02, 0],
   ]);
-
-  const w = new CodeWriter();
-  w.ops(ops);
-  w.emit(OPC.local_get, LOCAL_P, OPC.end);
-  const locals = vec([[1, I32]]);
-  const body = [...locals, ...w.bytes];
-  const code = vec([[...uleb(body.length), ...body]]);
-
-  return new Uint8Array([
+  return [
     0x00, 0x61, 0x73, 0x6d, // \0asm
     0x01, 0x00, 0x00, 0x00, // version 1
     ...section(1, types),
@@ -181,6 +174,15 @@ export function emitWasm(ops: Op[]): Uint8Array {
     ...section(3, funcs),
     ...section(5, memory),
     ...section(7, exports),
-    ...section(10, code),
-  ]);
+  ];
+}
+
+export function emitWasm(ops: Op[]): Uint8Array {
+  const w = new CodeWriter();
+  w.ops(ops);
+  w.emit(OPC.local_get, LOCAL_P, OPC.end);
+  const locals = vec([[1, 0x7f]]);
+  const body = [...locals, ...w.bytes];
+  const code = vec([[...uleb(body.length), ...body]]);
+  return new Uint8Array([...programHeader(), ...section(10, code)]);
 }

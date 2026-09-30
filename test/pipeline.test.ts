@@ -135,7 +135,7 @@ describe('wasm', () => {
     const { back } = await runBaabel('console.log("A");');
     const { text } = disassemble(back.wasm);
     expect(text).toContain('(import "env" "putc"');
-    expect(text).toContain('call 0');
+    expect(text).toContain('call $putc');
   });
 
   it('reports unbalanced loops', () => {

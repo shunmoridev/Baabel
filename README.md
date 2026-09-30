@@ -14,10 +14,21 @@ Babel（JS のトランスパイラ）＋ バベルの塔（言語がたくさ�
 命令セットを変えると字句解析器がその場で作り直され、中央のテキストも新しい言語に翻訳されます。
 
 ```
-JS ──acorn──▶ AST ──frontend──▶ Brainfuck ──serialize(方言)──▶ 羊語テキスト
-                                                                 │（編集可能）
-羊語テキスト ──lex(方言の Trie)──▶ BF ──optimize──▶ IR ──emit──▶ .wasm ──▶ Worker で実行
+JS ──acorn──▶ AST ──frontend──▶ Brainfuck ──serialize(方言)──▶ 羊語テキスト（編集可能）
+
+命令セット ──compiler generator──▶ 羊語コンパイラ.wasm
+                                          │
+羊語テキスト ─────────────────────────────┴──▶ program.wasm ──▶ Worker で実行
 ```
+
+### コンパイラそのものも Wasm で生成
+
+命令セットを決めるたびに、その言語専用のコンパイラ **`羊語コンパイラ.wasm`** がブラウザ内で生成されます（約 2KB、1ms 未満）。
+
+- 命令文字列の Trie はテーブルではなく、UTF-8 バイトで分岐する**コード**（`$match` 関数）に変換されます
+- `$compile` は中央のテキストを受け取り、`program.wasm` のバイト列をメモリに書き出します（Wasm が Wasm を生成）
+- 「コンパイラ」タブで、生成されたコンパイラの逆アセンブル結果を見られます
+- 上部の「Wasm化」で、最適化が強めの TypeScript 実装（`src/compiler/optimizer.ts` + `wasm.ts`）に切り替えられます。テストでは、両者が全サンプルで同じ出力になることを確認しています
 
 ## 起動
 
