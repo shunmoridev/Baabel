@@ -9,6 +9,7 @@ import { disassemble, hexdump } from './compiler/disasm';
 import { createJsEditor, createMeemeEditor, markErrorLine, onUserEdit, setDocProgrammatically, setEditorDialect } from './ui/editors';
 import type { WorkerMessage, WorkerRequest } from './runtime/worker';
 import { LOCALES, detectLocale, getLocale, setLocale, spec, t, type Locale, type MessageKey } from './i18n';
+import { decodeShare, encodeShare, shareDataFromHash, shareUrl, type SharedState } from './share';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const TIMEOUT_MS = 5000;
@@ -81,8 +82,16 @@ onUserEdit(() => setDirty(true));
 
 // ───────────────────────── stage 1: JS → 羊語 ─────────────────────────
 
+/** Set when code is loaded programmatically and already compiled (e.g. from a share link). */
+let skipJsChange: string | null = null;
+
 function onJsChange(src: string) {
   store.set('js', src);
+  if (src === skipJsChange) {
+    skipJsChange = null;
+    return;
+  }
+  skipJsChange = null;
   compileFront(src);
 }
 
@@ -536,6 +545,104 @@ function changeLocale(next: Locale) {
   renderArtifacts();
 }
 
+
+// ───────────────────────── share links ─────────────────────────
+
+function currentShareState(): SharedState {
+  return {
+    js: jsView.state.doc.toString(),
+    dialect,
+    stdin: $<HTMLTextAreaElement>('stdin').value,
+    ...(meemeDirty ? { meeme: meemeView.state.doc.toString() } : {}),
+  };
+}
+
+async function openShare() {
+  const dlg = $<HTMLDialogElement>('share-dialog');
+  const url = shareUrl(await encodeShare(currentShareState()), location.origin + location.pathname + location.search);
+  const input = $<HTMLInputElement>('share-url');
+  input.value = url;
+  const meta = $('share-meta');
+  meta.textContent = t('share.length', { n: url.length.toLocaleString() }) + (url.length > 4000 ? '  ' + t('share.long') : '');
+  meta.classList.toggle('warn', url.length > 4000);
+  const text = t('share.text', { dialect: dialectName(dialect) });
+  $<HTMLAnchorElement>('share-x').href = `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;
+  $<HTMLAnchorElement>('share-bsky').href = `https://bsky.app/intent/compose?text=${encodeURIComponent(`${text} ${url}`)}`;
+  $<HTMLAnchorElement>('share-line').href = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(url)}`;
+  const native = $<HTMLButtonElement>('share-native');
+  native.hidden = typeof navigator.share !== 'function';
+  native.onclick = () => navigator.share?.({ title: 'Baabel', text, url }).catch(() => {});
+  const copy = $<HTMLButtonElement>('share-copy');
+  copy.textContent = t('share.copy');
+  copy.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      input.select();
+      document.execCommand('copy');
+    }
+    copy.textContent = t('share.copied');
+  };
+  dlg.showModal();
+  input.select();
+}
+
+function showBanner(text: string, kind: '' | 'err', undo: (() => void) | null) {
+  const banner = $('share-banner');
+  banner.hidden = false;
+  banner.className = `banner ${kind}`;
+  $('share-banner-text').textContent = text;
+  const undoBtn = $('share-undo');
+  undoBtn.hidden = !undo;
+  undoBtn.onclick = () => {
+    undo?.();
+    banner.hidden = true;
+  };
+  $('share-banner-close').onclick = () => (banner.hidden = true);
+}
+
+/** Load the state from a #s=… link. Returns false if there is no (valid) share data. */
+async function loadSharedFromHash(): Promise<boolean> {
+  const data = shareDataFromHash(location.hash);
+  if (!data) return false;
+  // drop the fragment so later edits and reloads do not fight with it
+  history.replaceState(null, '', location.pathname + location.search);
+  let state: SharedState;
+  try {
+    state = await decodeShare(data);
+  } catch {
+    showBanner(t('share.invalid'), 'err', null);
+    return false;
+  }
+  // keep what the visitor had, so they can go back
+  const backup: SharedState = { js: jsView.state.doc.toString(), dialect, stdin: $<HTMLTextAreaElement>('stdin').value };
+  applyState(state);
+  showBanner(t('share.loaded', { dialect: dialectName(state.dialect) }), '', () => applyState(backup));
+  return true;
+}
+
+function applyState(state: SharedState) {
+  if (dialect.id !== state.dialect.id || BF_OPS.some((op) => dialect.tokens[op] !== state.dialect.tokens[op]) || !!dialect.lines !== !!state.dialect.lines) {
+    if (state.dialect.id === 'custom') store.set('custom', state.dialect);
+    applyDialect(state.dialect);
+  }
+  const stdin = $<HTMLTextAreaElement>('stdin');
+  stdin.value = state.stdin;
+  store.set('stdin', state.stdin);
+  if (jsView.state.doc.toString() !== state.js) {
+    skipJsChange = state.js;
+    jsView.dispatch({ changes: { from: 0, to: jsView.state.doc.length, insert: state.js } });
+  }
+  store.set('js', state.js);
+  compileFront(state.js);
+  if (state.meeme != null) {
+    setDocProgrammatically(meemeView, state.meeme);
+    setDirty(true);
+  }
+}
+
+window.addEventListener('hashchange', () => void loadSharedFromHash());
+
 // ───────────────────────── wiring ─────────────────────────
 
 function fillExamples() {
@@ -558,6 +665,7 @@ $<HTMLSelectElement>('dialect-select').onchange = (e) => {
   if (d) applyDialect(d);
 };
 $('dialect-edit').onclick = openDialectEditor;
+$('share').onclick = () => void openShare();
 $('spec-open').onclick = openSpec;
 $('run').onclick = () => (worker ? (stopWorker(), setRunStatus('err', t('status.stopped'))) : run());
 $('regen').onclick = () => compileFront(jsView.state.doc.toString());
@@ -629,4 +737,6 @@ renderSpecStrip();
 renderCompilerInfo();
 setDirty(false);
 void getCompiler();
-compileFront(jsView.state.doc.toString());
+void loadSharedFromHash().then((loaded) => {
+  if (!loaded) compileFront(jsView.state.doc.toString());
+});

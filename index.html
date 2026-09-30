@@ -37,6 +37,7 @@
           </select>
         </label>
         <label class="toggle"><input id="autorun" type="checkbox" checked /> <span data-i18n="ui.autorun">自動実行</span></label>
+        <button id="share" class="btn ghost" type="button" data-i18n="ui.share">🔗 共有</button>
         <button id="run" class="btn primary" type="button" data-i18n="ui.run">▶ 実行</button>
         <label class="field lang" title="Language / 言語 / 语言">
           <span aria-hidden="true">🌐</span>
@@ -44,6 +45,12 @@
         </label>
       </div>
     </header>
+
+    <div id="share-banner" class="banner" hidden>
+      <span id="share-banner-text"></span>
+      <button id="share-undo" class="linkish" type="button" data-i18n="share.undo"></button>
+      <button id="share-banner-close" class="banner-close" type="button" aria-label="close">×</button>
+    </div>
 
     <main class="panes">
       <section class="pane" id="pane-js">
@@ -128,6 +135,27 @@
         <div id="spec-body"></div>
         <div class="dialog-actions">
           <button value="close" class="btn primary" type="submit" data-i18n="ui.close">閉じる</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="share-dialog" class="share-dialog">
+      <form method="dialog">
+        <h2 data-i18n="share.title">共有リンク</h2>
+        <p class="hint" data-i18n="share.hint"></p>
+        <div class="share-row">
+          <input id="share-url" readonly spellcheck="false" />
+          <button id="share-copy" class="btn primary" type="button" data-i18n="share.copy">コピー</button>
+        </div>
+        <p id="share-meta" class="hint"></p>
+        <div class="share-sns">
+          <a id="share-x" class="btn" target="_blank" rel="noopener noreferrer">𝕏</a>
+          <a id="share-bsky" class="btn" target="_blank" rel="noopener noreferrer">Bluesky</a>
+          <a id="share-line" class="btn" target="_blank" rel="noopener noreferrer">LINE</a>
+          <button id="share-native" class="btn" type="button" hidden data-i18n="share.native"></button>
+        </div>
+        <div class="dialog-actions">
+          <button value="close" class="btn ghost" type="submit" data-i18n="ui.close">閉じる</button>
         </div>
       </form>
     </dialog>

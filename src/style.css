@@ -883,3 +883,66 @@ dialog h2 {
 .ws-mode .tk-loop {
   background: color-mix(in srgb, var(--tk-loop) 22%, transparent);
 }
+
+/* ───────── share ───────── */
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 12px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--panel);
+  font-size: 13px;
+}
+
+.banner.err {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.banner-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.share-dialog {
+  width: min(620px, calc(100vw - 32px));
+}
+
+.share-row {
+  display: flex;
+  gap: 8px;
+}
+
+.share-row input {
+  flex: 1;
+  min-width: 0;
+  background: var(--editor-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+#share-meta {
+  margin: 8px 0 12px;
+}
+
+.share-sns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.share-sns a.btn {
+  text-decoration: none;
+  color: var(--text);
+}
