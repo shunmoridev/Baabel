@@ -92,3 +92,14 @@ UI・コンパイルエラー・サンプル・言語仕様は **日本語 / Eng
 - **最適化**（`src/compiler/optimizer.ts`）：連続した `+`/`>` の畳み込み、オフセットアドレッシング、`[-]` → clear、`[->+<]` → 乗算、`[>]` → scan。
 - **Wasm 生成**（`src/compiler/wasm.ts`）：ツールチェーンを使わず、バイト列を直接組み立てます。「Wasm (WAT)」タブは生成したバイト列を自前の逆アセンブラで戻したものです。
 - **実行**：Web Worker 内で実行し、5 秒でタイムアウトします。テープは 65536 セル（1 ページ）です。
+
+## ライセンス
+
+このプロジェクトは [MIT License](LICENSE) です。
+
+フォントは外部から読み込まず、アプリと一緒に配信しています（[Fontsource](https://fontsource.org/) の npm パッケージ経由）。
+
+- [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono)：SIL Open Font License 1.1
+- [M PLUS Rounded 1c](https://github.com/coz-m/MPLUS_FONTS)：SIL Open Font License 1.1
+
+ライセンス文は `public/licenses/` にあり、ビルド後は `dist/licenses/` に入ります。

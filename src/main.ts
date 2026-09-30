@@ -1,3 +1,8 @@
+// Fonts are bundled with the app (SIL OFL 1.1) instead of being fetched from Google Fonts.
+import '@fontsource/jetbrains-mono/400.css';
+import '@fontsource/jetbrains-mono/600.css';
+import '@fontsource/m-plus-rounded-1c/500.css';
+import '@fontsource/m-plus-rounded-1c/800.css';
 import './style.css';
 import type { EditorView } from 'codemirror';
 import { getExamples, identifyExample } from './examples';
